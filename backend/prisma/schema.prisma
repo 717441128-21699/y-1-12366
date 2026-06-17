@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DISPATCHER
+  DRIVER
+  CUSTOMER
+  SUPERVISOR
+}
+
+enum TemperatureZone {
+  FROZEN
+  REFRIGERATED
+  AMBIENT
+  DUAL_ZONE
+  MULTI_TEMP
+}
+
+enum VehicleStatus {
+  IDLE
+  IN_TRANSIT
+  MAINTENANCE
+  DISABLED
+}
+
+enum OrderStatus {
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED
+  SIGNED
+  CANCELLED
+  EXCEPTION
+}
+
+enum AlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+  EMERGENCY
+}
+
+enum WorkOrderStatus {
+  PENDING
+  ASSIGNED
+  PROCESSING
+  RESOLVED
+  ESCALATED
+  CLOSED
+}
+
+enum WorkOrderType {
+  TEMPERATURE_ALERT
+  REVIEW
+  AUDIT
+}
+
+enum SignStatus {
+  PENDING
+  SIGNED
+  DISPUTED
+}
+
+enum AuditStatus {
+  PENDING
+  REVIEWING
+  CONFIRMED
+  REJECTED
+}
+
+enum NotificationType {
+  ORDER_STATUS
+  TEMPERATURE_ALERT
+  SIGN_EXCEPTION
+  WORK_ORDER
+  SYSTEM
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  phone        String?
+  role         UserRole @default(DRIVER)
+  password     String
+  avatar       String?
+  skills       String[]
+  standbyArea  String?
+  isOnDuty     Boolean  @default(false)
+  lastLocation String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vehicles         Vehicle[]         @relation("DriverVehicles")
+  orders           Order[]           @relation("DriverOrders")
+  workOrders       WorkOrder[]       @relation("AssignedWorkOrders")
+  createdOrders    Order[]           @relation("CreatedOrders")
+  notifications    Notification[]
+  transportLogs    TransportLog[]
+  standbyPersonnel StandbyPersonnel?
+}
+
+model Vehicle {
+  id              Int             @id @default(autoincrement())
+  plateNumber     String          @unique
+  vehicleType     String
+  temperatureZone TemperatureZone
+  maxLoad         Float
+  currentLoad     Float           @default(0)
+  insulationGrade Int
+  currentLat      Float?
+  currentLng      Float?
+  status          VehicleStatus   @default(IDLE)
+  lastMaintenance DateTime?
+  fuelConsumption Float
+  totalMileage    Float           @default(0)
+  driverId        Int?
+  driver          User?           @relation("DriverVehicles", fields: [driverId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  sensors     TemperatureSensor[]
+  orders      Order[]
+  signRecords SignRecord[]
+}
+
+model TemperatureSensor {
+  id          Int       @id @default(autoincrement())
+  deviceId    String    @unique
+  vehicleId   Int
+  vehicle     Vehicle   @relation(fields: [vehicleId], references: [id])
+  location    String
+  minTemp     Float
+  maxTemp     Float
+  isActive    Boolean   @default(true)
+  lastReading DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  readings TemperatureReading[]
+}
+
+model TemperatureReading {
+  id          Int               @id @default(autoincrement())
+  sensorId    Int
+  sensor      TemperatureSensor @relation(fields: [sensorId], references: [id])
+  vehicleId   Int
+  orderId     Int?
+  order       Order?            @relation(fields: [orderId], references: [id])
+  temperature Float
+  humidity    Float?
+  readingTime DateTime          @default(now())
+  isAlert     Boolean           @default(false)
+  alertLevel  AlertLevel?
+  createdAt   DateTime          @default(now())
+
+  @@index([sensorId, readingTime])
+  @@index([vehicleId, readingTime])
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  contact   String
+  phone     String
+  address   String
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+}
+
+model Order {
+  id                 Int             @id @default(autoincrement())
+  orderNo            String          @unique
+  customerId         Int
+  customer           Customer        @relation(fields: [customerId], references: [id])
+  goodsName          String
+  goodsQuantity      Int
+  goodsWeight        Float
+  goodsVolume        Float?
+  temperatureZone    TemperatureZone
+  minTemp            Float
+  maxTemp            Float
+  pickupAddress      String
+  pickupLat          Float?
+  pickupLng          Float?
+  deliveryAddress    String
+  deliveryLat        Float?
+  deliveryLng        Float?
+  pickupTime         DateTime
+  deliveryTime       DateTime
+  actualPickupTime   DateTime?
+  actualDeliveryTime DateTime?
+  status             OrderStatus     @default(PENDING)
+  vehicleId          Int?
+  vehicle            Vehicle?        @relation(fields: [vehicleId], references: [id])
+  driverId           Int?
+  driver             User?           @relation("DriverOrders", fields: [driverId], references: [id])
+  createdById        Int?
+  createdBy          User?           @relation("CreatedOrders", fields: [createdById], references: [id])
+  remark             String?
+  signedQuantity     Int?
+  signDifference     Float?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  temperatureReadings TemperatureReading[]
+  alerts              Alert[]
+  signRecords         SignRecord[]
+  transportLogs       TransportLog[]
+  workOrders          WorkOrder[]
+  notifications       Notification[]
+
+  @@index([status])
+  @@index([vehicleId, status])
+  @@index([createdAt])
+}
+
+model Alert {
+  id           Int        @id @default(autoincrement())
+  orderId      Int
+  order        Order      @relation(fields: [orderId], references: [id])
+  vehicleId    Int
+  sensorId     Int
+  alertLevel   AlertLevel
+  currentTemp  Float
+  thresholdMin Float
+  thresholdMax Float
+  description  String?
+  isResolved   Boolean    @default(false)
+  resolvedAt   DateTime?
+  resolvedBy   Int?
+  createdAt    DateTime   @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([alertLevel, isResolved])
+}
+
+model WorkOrder {
+  id          Int             @id @default(autoincrement())
+  orderId     Int?
+  order       Order?          @relation(fields: [orderId], references: [id])
+  type        WorkOrderType
+  title       String
+  description String?
+  priority    AlertLevel
+  status      WorkOrderStatus @default(PENDING)
+  assigneeId  Int?
+  assignee    User?           @relation("AssignedWorkOrders", fields: [assigneeId], references: [id])
+  alertId     Int?
+  assignedAt  DateTime?
+  startedAt   DateTime?
+  resolvedAt  DateTime?
+  escalated   Boolean         @default(false)
+  escalatedAt DateTime?
+  deadline    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([status, priority])
+  @@index([assigneeId, status])
+}
+
+model StandbyPersonnel {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @unique
+  user        User      @relation(fields: [userId], references: [id])
+  area        String
+  skills      String[]
+  currentLat  Float?
+  currentLng  Float?
+  isAvailable Boolean   @default(true)
+  lastActive  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SignRecord {
+  id               Int        @id @default(autoincrement())
+  orderId          Int
+  order            Order      @relation(fields: [orderId], references: [id])
+  vehicleId        Int
+  vehicle          Vehicle    @relation(fields: [vehicleId], references: [id])
+  signedBy         Int?
+  signTime         DateTime   @default(now())
+  signStatus       SignStatus @default(PENDING)
+  expectedQuantity Int
+  actualQuantity   Int
+  difference       Float
+  isOverThreshold  Boolean
+  signPhoto        String?
+  remark           String?
+  reviewedBy       Int?
+  reviewedAt       DateTime?
+  createdAt        DateTime   @default(now())
+
+  @@index([orderId])
+  @@index([signStatus])
+}
+
+model TransportLog {
+  id               Int         @id @default(autoincrement())
+  orderId          Int
+  order            Order       @relation(fields: [orderId], references: [id])
+  driverId         Int
+  driver           User        @relation(fields: [driverId], references: [id])
+  reportedFuel     Float
+  reportedMileage  Float
+  systemFuel       Float?
+  systemMileage    Float?
+  fuelDeviation    Float?
+  mileageDeviation Float?
+  isAbnormal       Boolean     @default(false)
+  remark           String?
+  reportTime       DateTime    @default(now())
+  createdAt        DateTime    @default(now())
+  auditTasks       AuditTask[]
+
+  @@index([orderId])
+  @@index([driverId])
+}
+
+model AuditTask {
+  id             Int           @id @default(autoincrement())
+  transportLogId Int
+  transportLog   TransportLog  @relation(fields: [transportLogId], references: [id])
+  type           WorkOrderType
+  status         AuditStatus   @default(PENDING)
+  assigneeId     Int?
+  findings       String?
+  conclusion     String?
+  reviewedBy     Int?
+  reviewedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model DailyReport {
+  id                 Int      @id @default(autoincrement())
+  reportDate         DateTime @unique
+  totalOrders        Int      @default(0)
+  onTimeCount        Int      @default(0)
+  onTimeRate         Float    @default(0)
+  tempQualifiedCount Int      @default(0)
+  tempQualifiedRate  Float    @default(0)
+  vehicleUtilization Float    @default(0)
+  totalMileage       Float    @default(0)
+  totalFuel          Float    @default(0)
+  alertCount         Int      @default(0)
+  areaStats          Json?
+  lineStats          Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  content   String
+  relatedId Int?
+  orderId   Int?
+  order     Order?           @relation(fields: [orderId], references: [id])
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
