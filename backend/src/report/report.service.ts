@@ -246,7 +246,7 @@ export class ReportService {
   }
 
   async findAll(query: ReportQueryDto) {
-    const { page = 1, pageSize = 10, startDate, endDate } = query;
+    const { page = 1, pageSize = 10, startDate, endDate, line } = query;
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
@@ -272,6 +272,21 @@ export class ReportService {
       }),
       this.prisma.dailyReport.count({ where }),
     ]);
+
+    if (line) {
+      for (const report of data as any[]) {
+        if (Array.isArray(report.lineStats)) {
+          report.lineStats = report.lineStats.filter(
+            (stat: LineStat) => stat.line.includes(line),
+          );
+        }
+        if (Array.isArray(report.areaStats)) {
+          report.areaStats = report.areaStats.filter(
+            (stat: AreaStat) => stat.area.includes(line),
+          );
+        }
+      }
+    }
 
     return {
       data,

@@ -13,6 +13,7 @@ import { AuditModule } from './audit/audit.module';
 import { ReportModule } from './report/report.module';
 import { NotificationModule } from './notification/notification.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { GatewayModule } from './gateway/gateway.module';
     ReportModule,
     NotificationModule,
     GatewayModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],

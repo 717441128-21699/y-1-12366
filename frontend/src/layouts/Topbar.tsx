@@ -3,6 +3,7 @@ import { UserOutlined, LogoutOutlined } from '@ant-design/icons'
 import { useLocation } from 'react-router-dom'
 import { menuItems } from '@/router'
 import NotificationCenter from '@/components/NotificationCenter'
+import UserSwitcher from '@/components/UserSwitcher'
 
 const { Header } = Layout
 
@@ -43,6 +44,7 @@ const Topbar = () => {
       <Breadcrumb items={getBreadcrumbItems()} />
       <Space size={8}>
         <NotificationCenter />
+        <UserSwitcher />
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Space style={{ cursor: 'pointer', padding: '0 8px' }}>
             <Avatar icon={<UserOutlined />} />

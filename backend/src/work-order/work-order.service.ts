@@ -265,6 +265,7 @@ export class WorkOrderService implements OnModuleInit {
     status?: WorkOrderStatus,
     priority?: AlertLevel,
     assigneeId?: number,
+    type?: WorkOrderType,
   ) {
     const skip = (page - 1) * pageSize;
     const where: any = {};
@@ -272,6 +273,7 @@ export class WorkOrderService implements OnModuleInit {
     if (status) where.status = status;
     if (priority) where.priority = priority;
     if (assigneeId) where.assigneeId = assigneeId;
+    if (type) where.type = type;
 
     const [data, total] = await Promise.all([
       this.prisma.workOrder.findMany({

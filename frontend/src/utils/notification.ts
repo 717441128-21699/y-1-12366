@@ -43,8 +43,6 @@ class NotificationSocket {
       this.socket.on('connect', () => {
         console.log('[NotificationSocket] Connected')
         this.reconnectAttempts = 0
-        this.socket?.emit('join', { userId: 1 })
-        this.socket?.emit('join-role', { role: 'ADMIN' })
       })
 
       this.socket.on('disconnect', (reason) => {
@@ -107,6 +105,13 @@ class NotificationSocket {
     }
     this.callbacks.clear()
     NotificationSocket.instance = null
+  }
+
+  public joinRoom(userId: number, role: string): void {
+    if (this.socket?.connected) {
+      this.socket.emit('join', { userId })
+      this.socket.emit('join-role', { role })
+    }
   }
 
   public emit(event: string, data: any): void {

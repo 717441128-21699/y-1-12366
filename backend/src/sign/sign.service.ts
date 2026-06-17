@@ -156,19 +156,38 @@ export class SignService {
     });
   }
 
-  async findAll(page: number = 1, pageSize: number = 10) {
+  async findAll(page: number = 1, pageSize: number = 10, orderNo?: string, signStatus?: string, startDate?: string, endDate?: string) {
     const skip = (page - 1) * pageSize;
+    const where: any = {};
+
+    if (orderNo) {
+      where.order = { orderNo: { contains: orderNo } };
+    }
+    if (signStatus) {
+      where.signStatus = signStatus;
+    }
+    if (startDate || endDate) {
+      where.signTime = {};
+      if (startDate) {
+        where.signTime.gte = new Date(startDate);
+      }
+      if (endDate) {
+        where.signTime.lte = new Date(endDate);
+      }
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.signRecord.findMany({
+        where,
         skip,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
         include: {
-          order: true,
+          order: { include: { customer: true } },
           vehicle: true,
         },
       }),
-      this.prisma.signRecord.count(),
+      this.prisma.signRecord.count({ where }),
     ]);
 
     return {

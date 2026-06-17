@@ -8,9 +8,8 @@ import {
   markAllNotificationsAsRead,
   getUnreadNotificationCount,
 } from '@/api/notification'
+import { useAuth } from '@/contexts/AuthContext'
 import dayjs from 'dayjs'
-
-const CURRENT_USER_ID = 1
 
 export interface NotificationContextValue {
   notifications: Notification[]
@@ -59,6 +58,7 @@ const showToast = (notification: Notification) => {
 }
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
+  const { currentUser } = useAuth()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -73,8 +73,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     try {
       setIsLoading(true)
       const [notifRes, countRes] = await Promise.allSettled([
-        getUserNotifications(CURRENT_USER_ID),
-        getUnreadNotificationCount(CURRENT_USER_ID),
+        getUserNotifications(currentUser.id),
+        getUnreadNotificationCount(currentUser.id),
       ])
 
       if (notifRes.status === 'fulfilled' && notifRes.value.data) {
@@ -135,7 +135,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [currentUser.id])
 
   const markAsRead = useCallback(async (id: number) => {
     try {
@@ -151,7 +151,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
   const markAllAsRead = useCallback(async () => {
     try {
-      await markAllNotificationsAsRead(CURRENT_USER_ID)
+      await markAllNotificationsAsRead(currentUser.id)
     } catch (e) {
       // ignore API error, update local state
     }
@@ -166,6 +166,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     fetchNotifications()
+    notificationSocket.joinRoom(currentUser.id, currentUser.role)
 
     const unsubscribe = notificationSocket.onNotification((notification) => {
       addNotification(notification)
@@ -174,7 +175,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       unsubscribe()
     }
-  }, [fetchNotifications, addNotification])
+  }, [fetchNotifications, addNotification, currentUser.id, currentUser.role])
 
   const value = useMemo(
     () => ({

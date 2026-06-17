@@ -28,6 +28,7 @@ export class WorkOrderController {
     @Query('status') status?: WorkOrderStatus,
     @Query('priority') priority?: AlertLevel,
     @Query('assigneeId') assigneeId?: string,
+    @Query('type') type?: WorkOrderType,
   ) {
     return this.workOrderService.findAll(
       parseInt(page),
@@ -35,6 +36,7 @@ export class WorkOrderController {
       status,
       priority,
       assigneeId ? parseInt(assigneeId) : undefined,
+      type,
     );
   }
 
