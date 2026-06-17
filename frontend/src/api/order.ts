@@ -14,22 +14,13 @@ export const createOrder = (data: Partial<Order>) => {
 }
 
 export const updateOrder = (id: number, data: Partial<Order>) => {
-  return request.put<Order>(`/orders/${id}`, data)
+  return request.patch<Order>(`/orders/${id}`, data)
 }
 
 export const deleteOrder = (id: number) => {
   return request.delete(`/orders/${id}`)
 }
 
-export const assignVehicle = (orderId: number, vehicleId?: number) => {
-  return request.post<{ vehicleId: number; plateNo: string }>(`/orders/${orderId}/assign`, { vehicleId })
-}
-
-export const smartAssignVehicle = (orderId: number) => {
-  return request.post<{
-    vehicleId: number
-    plateNo: string
-    score: number
-    reason: string
-  }>(`/orders/${orderId}/smart-assign`)
+export const assignVehicle = (data: { orderId: number; vehicleId?: number }) => {
+  return request.post<{ vehicleId: number; plateNo: string }>('/orders/assign-vehicle', data)
 }

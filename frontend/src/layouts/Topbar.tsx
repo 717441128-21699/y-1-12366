@@ -2,6 +2,7 @@ import { Layout, Breadcrumb, Avatar, Dropdown, Space } from 'antd'
 import { UserOutlined, LogoutOutlined } from '@ant-design/icons'
 import { useLocation } from 'react-router-dom'
 import { menuItems } from '@/router'
+import NotificationCenter from '@/components/NotificationCenter'
 
 const { Header } = Layout
 
@@ -40,12 +41,15 @@ const Topbar = () => {
       }}
     >
       <Breadcrumb items={getBreadcrumbItems()} />
-      <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-        <Space style={{ cursor: 'pointer' }}>
-          <Avatar icon={<UserOutlined />} />
-          <span>管理员</span>
-        </Space>
-      </Dropdown>
+      <Space size={8}>
+        <NotificationCenter />
+        <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+          <Space style={{ cursor: 'pointer', padding: '0 8px' }}>
+            <Avatar icon={<UserOutlined />} />
+            <span>管理员</span>
+          </Space>
+        </Dropdown>
+      </Space>
     </Header>
   )
 }

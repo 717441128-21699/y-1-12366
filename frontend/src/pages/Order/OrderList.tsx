@@ -1,44 +1,74 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Table, Space, Button, Input, Select, DatePicker, Tag, Modal, Form, InputNumber, message, Card, Descriptions, Result } from 'antd'
 import { SearchOutlined, PlusOutlined, EyeOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { Order, OrderStatus, TemperatureZone } from '@/types'
+import type { Order, OrderStatus, TemperatureZone, OrderSearchParams } from '@/types'
+import { getOrderList, createOrder, assignVehicle, getOrderById } from '@/api/order'
+import dayjs from 'dayjs'
 
 const { RangePicker } = DatePicker
 
 const OrderList = () => {
-  const [data] = useState<Order[]>([
-    { id: 1, orderNo: 'ORD20240101001', customer: '华润万家', goods: '冷冻猪肉', temperatureZone: 'frozen', status: 'transit', vehicleId: 1, vehiclePlate: '京A12345', weight: 2000, volume: 10, startAddress: '北京市朝阳区', endAddress: '北京市海淀区', planDepartureTime: '2024-01-15 08:00:00', planArrivalTime: '2024-01-15 12:00:00', temperatureMin: -18, temperatureMax: -12, createdAt: '2024-01-15 06:00:00', updatedAt: '2024-01-15 09:00:00' },
-    { id: 2, orderNo: 'ORD20240101002', customer: '永辉超市', goods: '冷藏蔬菜', temperatureZone: 'chilled', status: 'pending', weight: 500, volume: 3, startAddress: '北京市丰台区', endAddress: '北京市西城区', planDepartureTime: '2024-01-15 10:00:00', planArrivalTime: '2024-01-15 13:00:00', temperatureMin: 2, temperatureMax: 8, createdAt: '2024-01-15 07:00:00', updatedAt: '2024-01-15 07:00:00' },
-    { id: 3, orderNo: 'ORD20240101003', customer: '盒马鲜生', goods: '生鲜水果', temperatureZone: 'chilled', status: 'assigned', vehicleId: 2, vehiclePlate: '京B67890', weight: 800, volume: 5, startAddress: '北京市通州区', endAddress: '北京市朝阳区', planDepartureTime: '2024-01-15 09:00:00', planArrivalTime: '2024-01-15 11:00:00', temperatureMin: 0, temperatureMax: 5, createdAt: '2024-01-15 05:00:00', updatedAt: '2024-01-15 08:30:00' },
-    { id: 4, orderNo: 'ORD20240101004', customer: '物美超市', goods: '冰淇淋', temperatureZone: 'frozen', status: 'delivered', vehicleId: 3, vehiclePlate: '京C11111', weight: 300, volume: 2, startAddress: '北京市大兴区', endAddress: '北京市石景山区', planDepartureTime: '2024-01-14 14:00:00', planArrivalTime: '2024-01-14 17:00:00', actualDepartureTime: '2024-01-14 14:15:00', actualArrivalTime: '2024-01-14 16:50:00', temperatureMin: -20, temperatureMax: -15, createdAt: '2024-01-14 10:00:00', updatedAt: '2024-01-14 17:00:00' },
-    { id: 5, orderNo: 'ORD20240101005', customer: '家乐福', goods: '常温饮料', temperatureZone: 'normal', status: 'cancelled', weight: 1000, volume: 8, startAddress: '北京市顺义区', endAddress: '北京市昌平区', planDepartureTime: '2024-01-15 07:00:00', planArrivalTime: '2024-01-15 10:00:00', createdAt: '2024-01-15 04:00:00', updatedAt: '2024-01-15 06:00:00' },
-  ])
-
+  const [data, setData] = useState<Order[]>([])
   const [searchForm] = Form.useForm()
   const [modalForm] = Form.useForm()
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [createModalVisible, setCreateModalVisible] = useState(false)
   const [assignModalVisible, setAssignModalVisible] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
-  const [assignResult, setAssignResult] = useState<{ vehicleId: number; plateNo: string; score: number; reason: string } | null>(null)
+  const [assignResult, setAssignResult] = useState<{ vehicleId: number; plateNo: string } | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 5 })
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
+  const [searchParams, setSearchParams] = useState<OrderSearchParams>({})
 
   const statusMap: Record<OrderStatus, { text: string; color: string }> = {
-    pending: { text: '待分配', color: 'orange' },
-    assigned: { text: '已分配', color: 'blue' },
-    transit: { text: '运输中', color: 'processing' },
-    delivered: { text: '已送达', color: 'success' },
-    cancelled: { text: '已取消', color: 'default' },
+    PENDING: { text: '待分配', color: 'orange' },
+    ASSIGNED: { text: '已分配', color: 'blue' },
+    IN_TRANSIT: { text: '运输中', color: 'processing' },
+    DELIVERED: { text: '已送达', color: 'cyan' },
+    SIGNED: { text: '已签收', color: 'success' },
+    CANCELLED: { text: '已取消', color: 'default' },
+    EXCEPTION: { text: '异常', color: 'error' },
   }
 
   const temperatureZoneMap: Record<TemperatureZone, string> = {
-    frozen: '冷冻',
-    chilled: '冷藏',
-    normal: '常温',
+    FROZEN: '冷冻',
+    REFRIGERATED: '冷藏',
+    AMBIENT: '常温',
+    DUAL_ZONE: '双温区',
+    MULTI_TEMP: '多温区',
   }
+
+  const fetchData = useCallback(async (params?: OrderSearchParams) => {
+    setLoading(true)
+    try {
+      const finalParams: OrderSearchParams = {
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        ...searchParams,
+        ...params,
+      }
+      const res = await getOrderList(finalParams)
+      if (res.code === 0 || res.code === 200) {
+        setData(res.data.data)
+        setPagination(prev => ({
+          ...prev,
+          current: res.data.page,
+          pageSize: res.data.pageSize,
+          total: res.data.total,
+        }))
+      }
+    } catch (error) {
+      console.error('获取订单列表失败:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [pagination.current, pagination.pageSize, searchParams])
+
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   const columns: ColumnsType<Order> = [
     {
@@ -49,9 +79,9 @@ const OrderList = () => {
     },
     {
       title: '客户',
-      dataIndex: 'customer',
       key: 'customer',
       width: 120,
+      render: (_, record) => record.customer?.name || record.customerName || '-',
     },
     {
       title: '货物',
@@ -63,8 +93,8 @@ const OrderList = () => {
       title: '温区',
       dataIndex: 'temperatureZone',
       key: 'temperatureZone',
-      width: 80,
-      render: (zone: TemperatureZone) => temperatureZoneMap[zone],
+      width: 100,
+      render: (zone: TemperatureZone) => temperatureZoneMap[zone] || zone,
     },
     {
       title: '状态',
@@ -72,17 +102,22 @@ const OrderList = () => {
       key: 'status',
       width: 100,
       render: (status: OrderStatus) => (
-        <Tag color={statusMap[status].color}>
-          {statusMap[status].text}
+        <Tag color={statusMap[status]?.color || 'default'}>
+          {statusMap[status]?.text || status}
         </Tag>
       ),
     },
     {
       title: '车辆',
-      dataIndex: 'vehiclePlate',
-      key: 'vehiclePlate',
+      key: 'vehicle',
       width: 100,
-      render: (plate) => plate || '-',
+      render: (_, record) => record.vehicle?.plateNo || record.vehiclePlate || '-',
+    },
+    {
+      title: '司机',
+      key: 'driver',
+      width: 100,
+      render: (_, record) => record.driver?.name || record.driverName || '-',
     },
     {
       title: '创建时间',
@@ -100,7 +135,7 @@ const OrderList = () => {
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleDetail(record)}>
             详情
           </Button>
-          {record.status === 'pending' && (
+          {record.status === 'PENDING' && (
             <Button type="link" size="small" icon={<ThunderboltOutlined />} onClick={() => handleSmartAssign(record)}>
               智能分配
             </Button>
@@ -110,8 +145,17 @@ const OrderList = () => {
     },
   ]
 
-  const handleDetail = (record: Order) => {
-    setCurrentOrder(record)
+  const handleDetail = async (record: Order) => {
+    try {
+      const res = await getOrderById(record.id)
+      if (res.code === 0 || res.code === 200) {
+        setCurrentOrder(res.data)
+      } else {
+        setCurrentOrder(record)
+      }
+    } catch (error) {
+      setCurrentOrder(record)
+    }
     setDetailModalVisible(true)
   }
 
@@ -121,22 +165,26 @@ const OrderList = () => {
     setAssignModalVisible(true)
   }
 
-  const doSmartAssign = () => {
+  const doSmartAssign = async () => {
+    if (!currentOrder) return
     setAssignLoading(true)
-    setTimeout(() => {
-      setAssignResult({
-        vehicleId: 5,
-        plateNo: '京E55555',
-        score: 92,
-        reason: '该车辆温区匹配、载重充足、距离取货点最近',
-      })
+    try {
+      const res = await assignVehicle({ orderId: currentOrder.id })
+      if (res.code === 0 || res.code === 200) {
+        setAssignResult(res.data)
+        message.success('智能匹配成功')
+      }
+    } catch (error) {
+      console.error('智能分配失败:', error)
+    } finally {
       setAssignLoading(false)
-    }, 1500)
+    }
   }
 
   const confirmAssign = () => {
     message.success('车辆分配成功')
     setAssignModalVisible(false)
+    fetchData()
   }
 
   const handleCreate = () => {
@@ -145,21 +193,50 @@ const OrderList = () => {
   }
 
   const handleSearch = () => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-    }, 500)
+    const values = searchForm.getFieldsValue()
+    const params: OrderSearchParams = {}
+    if (values.orderNo) params.orderNo = values.orderNo
+    if (values.status) params.status = values.status
+    if (values.dateRange && values.dateRange.length === 2) {
+      params.startDate = values.dateRange[0].format('YYYY-MM-DD')
+      params.endDate = values.dateRange[1].format('YYYY-MM-DD')
+    }
+    setSearchParams(params)
+    setPagination(prev => ({ ...prev, current: 1 }))
+    fetchData({ ...params, page: 1 })
   }
 
   const handleReset = () => {
     searchForm.resetFields()
+    setSearchParams({})
+    setPagination(prev => ({ ...prev, current: 1 }))
+    fetchData({ page: 1 })
   }
 
-  const handleSubmitCreate = () => {
-    modalForm.validateFields().then(() => {
-      message.success('订单创建成功')
-      setCreateModalVisible(false)
-    })
+  const handleSubmitCreate = async () => {
+    try {
+      const values = await modalForm.validateFields()
+      const submitData: Partial<Order> = {
+        ...values,
+        planDepartureTime: values.planDepartureTime ? dayjs(values.planDepartureTime).format('YYYY-MM-DD HH:mm:ss') : undefined,
+        planArrivalTime: values.planArrivalTime ? dayjs(values.planArrivalTime).format('YYYY-MM-DD HH:mm:ss') : undefined,
+      }
+      const res = await createOrder(submitData)
+      if (res.code === 0 || res.code === 200) {
+        message.success('订单创建成功')
+        setCreateModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('创建订单失败:', error)
+      }
+    }
+  }
+
+  const handleTableChange = (page: number, pageSize: number) => {
+    setPagination(prev => ({ ...prev, current: page, pageSize }))
+    fetchData({ page, pageSize })
   }
 
   return (
@@ -171,11 +248,13 @@ const OrderList = () => {
           </Form.Item>
           <Form.Item name="status" label="状态">
             <Select placeholder="请选择状态" style={{ width: 150 }} allowClear>
-              <Select.Option value="pending">待分配</Select.Option>
-              <Select.Option value="assigned">已分配</Select.Option>
-              <Select.Option value="transit">运输中</Select.Option>
-              <Select.Option value="delivered">已送达</Select.Option>
-              <Select.Option value="cancelled">已取消</Select.Option>
+              <Select.Option value="PENDING">待分配</Select.Option>
+              <Select.Option value="ASSIGNED">已分配</Select.Option>
+              <Select.Option value="IN_TRANSIT">运输中</Select.Option>
+              <Select.Option value="DELIVERED">已送达</Select.Option>
+              <Select.Option value="SIGNED">已签收</Select.Option>
+              <Select.Option value="CANCELLED">已取消</Select.Option>
+              <Select.Option value="EXCEPTION">异常</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="dateRange" label="日期范围">
@@ -201,10 +280,11 @@ const OrderList = () => {
         dataSource={data}
         rowKey="id"
         loading={loading}
-        scroll={{ x: 1000 }}
+        scroll={{ x: 1100 }}
         pagination={{
           ...pagination,
-          onChange: (page, pageSize) => setPagination({ ...pagination, current: page, pageSize }),
+          showSizeChanger: true,
+          onChange: handleTableChange,
         }}
       />
 
@@ -221,26 +301,34 @@ const OrderList = () => {
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="订单号">{currentOrder.orderNo}</Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Tag color={statusMap[currentOrder.status].color}>
-                {statusMap[currentOrder.status].text}
+              <Tag color={statusMap[currentOrder.status]?.color || 'default'}>
+                {statusMap[currentOrder.status]?.text || currentOrder.status}
               </Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="客户">{currentOrder.customer}</Descriptions.Item>
+            <Descriptions.Item label="客户">{currentOrder.customer?.name || currentOrder.customerName || '-'}</Descriptions.Item>
             <Descriptions.Item label="货物">{currentOrder.goods}</Descriptions.Item>
-            <Descriptions.Item label="温区">{temperatureZoneMap[currentOrder.temperatureZone]}</Descriptions.Item>
-            <Descriptions.Item label="车辆">{currentOrder.vehiclePlate || '-'}</Descriptions.Item>
+            <Descriptions.Item label="温区">{temperatureZoneMap[currentOrder.temperatureZone] || currentOrder.temperatureZone}</Descriptions.Item>
+            <Descriptions.Item label="车辆">{currentOrder.vehicle?.plateNo || currentOrder.vehiclePlate || '-'}</Descriptions.Item>
+            <Descriptions.Item label="司机">{currentOrder.driver?.name || currentOrder.driverName || '-'}</Descriptions.Item>
+            <Descriptions.Item label="司机电话">{currentOrder.driver?.phone || '-'}</Descriptions.Item>
             <Descriptions.Item label="重量">{currentOrder.weight} kg</Descriptions.Item>
             <Descriptions.Item label="体积">{currentOrder.volume} m³</Descriptions.Item>
-            <Descriptions.Item label="起始地址">{currentOrder.startAddress}</Descriptions.Item>
-            <Descriptions.Item label="目的地址">{currentOrder.endAddress}</Descriptions.Item>
+            <Descriptions.Item label="起始地址" span={2}>{currentOrder.startAddress}</Descriptions.Item>
+            <Descriptions.Item label="目的地址" span={2}>{currentOrder.endAddress}</Descriptions.Item>
             <Descriptions.Item label="计划出发">{currentOrder.planDepartureTime}</Descriptions.Item>
             <Descriptions.Item label="计划到达">{currentOrder.planArrivalTime}</Descriptions.Item>
-            <Descriptions.Item label="温度范围">
+            <Descriptions.Item label="实际出发">{currentOrder.actualDepartureTime || '-'}</Descriptions.Item>
+            <Descriptions.Item label="实际到达">{currentOrder.actualArrivalTime || '-'}</Descriptions.Item>
+            <Descriptions.Item label="温度范围" span={2}>
               {currentOrder.temperatureMin !== undefined && currentOrder.temperatureMax !== undefined
                 ? `${currentOrder.temperatureMin}℃ ~ ${currentOrder.temperatureMax}℃`
                 : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="创建时间">{currentOrder.createdAt}</Descriptions.Item>
+            <Descriptions.Item label="更新时间">{currentOrder.updatedAt}</Descriptions.Item>
+            {currentOrder.remark && (
+              <Descriptions.Item label="备注" span={2}>{currentOrder.remark}</Descriptions.Item>
+            )}
           </Descriptions>
         )}
       </Modal>
@@ -256,7 +344,7 @@ const OrderList = () => {
         width={600}
       >
         <Form form={modalForm} layout="vertical">
-          <Form.Item name="customer" label="客户名称" rules={[{ required: true, message: '请输入客户名称' }]}>
+          <Form.Item name="customerName" label="客户名称" rules={[{ required: true, message: '请输入客户名称' }]}>
             <Input placeholder="请输入客户名称" />
           </Form.Item>
           <Form.Item name="goods" label="货物名称" rules={[{ required: true, message: '请输入货物名称' }]}>
@@ -264,9 +352,11 @@ const OrderList = () => {
           </Form.Item>
           <Form.Item name="temperatureZone" label="温区" rules={[{ required: true, message: '请选择温区' }]}>
             <Select placeholder="请选择温区">
-              <Select.Option value="frozen">冷冻</Select.Option>
-              <Select.Option value="chilled">冷藏</Select.Option>
-              <Select.Option value="normal">常温</Select.Option>
+              <Select.Option value="FROZEN">冷冻</Select.Option>
+              <Select.Option value="REFRIGERATED">冷藏</Select.Option>
+              <Select.Option value="AMBIENT">常温</Select.Option>
+              <Select.Option value="DUAL_ZONE">双温区</Select.Option>
+              <Select.Option value="MULTI_TEMP">多温区</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item label="重量(kg)" name="weight" rules={[{ required: true, message: '请输入重量' }]}>
@@ -286,6 +376,15 @@ const OrderList = () => {
           </Form.Item>
           <Form.Item label="计划到达时间" name="planArrivalTime" rules={[{ required: true, message: '请选择计划到达时间' }]}>
             <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="温度下限(℃)" name="temperatureMin">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="温度上限(℃)" name="temperatureMax">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={3} placeholder="请输入备注" />
           </Form.Item>
         </Form>
       </Modal>
@@ -313,11 +412,10 @@ const OrderList = () => {
           <Result
             status="success"
             title="智能匹配成功"
-            subTitle={assignResult.reason}
+            subTitle="系统已为您匹配最合适的车辆"
             extra={[
               <Card key="vehicle" size="small">
                 <p>推荐车辆：<strong>{assignResult.plateNo}</strong></p>
-                <p>匹配评分：<strong style={{ color: '#52c41a' }}>{assignResult.score}分</strong></p>
               </Card>
             ]}
           />

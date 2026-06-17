@@ -17,18 +17,14 @@ export const createWorkOrder = (data: Partial<WorkOrder>) => {
   return request.post<WorkOrder>('/work-orders', data)
 }
 
-export const processWorkOrder = (id: number, remark: string) => {
-  return request.put(`/work-orders/${id}/process`, { remark })
+export const processWorkOrder = (id: number, data: { remark?: string; status?: string }) => {
+  return request.patch(`/work-orders/${id}/process`, data)
 }
 
-export const resolveWorkOrder = (id: number, remark: string) => {
-  return request.put(`/work-orders/${id}/resolve`, { remark })
+export const assignWorkOrder = (id: number, assigneeId: number) => {
+  return request.patch(`/work-orders/${id}/assign/${assigneeId}`)
 }
 
-export const closeWorkOrder = (id: number, remark: string) => {
-  return request.put(`/work-orders/${id}/close`, { remark })
-}
-
-export const escalateWorkOrder = (id: number, remark: string) => {
-  return request.put(`/work-orders/${id}/escalate`, { remark })
+export const escalateWorkOrder = (id: number, data: { remark?: string }) => {
+  return request.patch(`/work-orders/${id}/escalate`, data)
 }

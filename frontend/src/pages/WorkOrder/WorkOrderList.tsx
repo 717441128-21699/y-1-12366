@@ -1,69 +1,90 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Table, Space, Button, Select, Tag, Modal, Form, Input, message, Card, Descriptions, Timeline, Divider } from 'antd'
 import { EyeOutlined, CheckCircleOutlined, ArrowUpOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus } from '@/types'
+import type { WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, WorkOrderSearchParams, WorkOrderLog } from '@/types'
+import { getWorkOrderList, getWorkOrderById, getWorkOrderLogs, processWorkOrder, escalateWorkOrder } from '@/api/workOrder'
 import dayjs from 'dayjs'
 
 const WorkOrderList = () => {
-  const [data] = useState<WorkOrder[]>([
-    { id: 1, orderNo: 'WO20240115001', type: 'maintenance', priority: 'high', status: 'pending', title: '车辆空调故障', description: '京A12345号车辆制冷设备异常，需要紧急检修', vehicleId: 1, vehiclePlate: '京A12345', creator: '调度员小王', createdAt: '2024-01-15 08:30:00', deadline: '2024-01-15 18:00:00', escalationLevel: 1 },
-    { id: 2, orderNo: 'WO20240115002', type: 'quality', priority: 'urgent', status: 'processing', title: '货物温度异常', description: '订单ORD20240101001的货物温度超标，需要核查原因', relatedOrderId: 1, relatedOrderNo: 'ORD20240101001', handler: '质检小李', creator: '客户服务', createdAt: '2024-01-15 09:15:00', deadline: '2024-01-15 12:00:00', escalationLevel: 2 },
-    { id: 3, orderNo: 'WO20240115003', type: 'customer_service', priority: 'medium', status: 'resolved', title: '客户投诉送达延迟', description: '客户反映订单送达时间比预计晚了2小时', relatedOrderId: 4, relatedOrderNo: 'ORD20240101004', handler: '客服小张', creator: '客户服务', createdAt: '2024-01-14 16:00:00', deadline: '2024-01-15 12:00:00', resolvedAt: '2024-01-15 10:30:00', escalationLevel: 1 },
-    { id: 4, orderNo: 'WO20240114004', type: 'maintenance', priority: 'low', status: 'closed', title: '车辆常规保养', description: '京B67890号车辆例行保养', vehicleId: 2, vehiclePlate: '京B67890', handler: '维修组', creator: '车管部', createdAt: '2024-01-14 09:00:00', deadline: '2024-01-16 18:00:00', resolvedAt: '2024-01-14 17:00:00', closedAt: '2024-01-14 17:30:00', escalationLevel: 0 },
-    { id: 5, orderNo: 'WO20240115005', type: 'other', priority: 'medium', status: 'pending', title: '系统功能建议', description: '希望增加批量导出功能', creator: '操作员小赵', createdAt: '2024-01-15 10:00:00', deadline: '2024-01-22 18:00:00', escalationLevel: 0 },
-  ])
-
+  const [data, setData] = useState<WorkOrder[]>([])
   const [searchForm] = Form.useForm()
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [processModalVisible, setProcessModalVisible] = useState(false)
   const [escalateModalVisible, setEscalateModalVisible] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<WorkOrder | null>(null)
+  const [workOrderLogs, setWorkOrderLogs] = useState<WorkOrderLog[]>([])
   const [processForm] = Form.useForm()
   const [escalateForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
-  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 5 })
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
+  const [searchParams, setSearchParams] = useState<WorkOrderSearchParams>({})
 
   const typeMap: Record<WorkOrderType, string> = {
-    maintenance: '设备维护',
-    quality: '质量问题',
-    customer_service: '客服工单',
-    other: '其他',
+    TEMPERATURE_ALERT: '温度告警',
+    REVIEW: '复核工单',
+    AUDIT: '审核工单',
   }
 
   const priorityMap: Record<WorkOrderPriority, { text: string; color: string }> = {
-    low: { text: '低', color: 'default' },
-    medium: { text: '中', color: 'blue' },
-    high: { text: '高', color: 'orange' },
-    urgent: { text: '紧急', color: 'red' },
+    INFO: { text: '提示', color: 'default' },
+    WARNING: { text: '警告', color: 'blue' },
+    CRITICAL: { text: '严重', color: 'orange' },
+    EMERGENCY: { text: '紧急', color: 'red' },
   }
 
   const statusMap: Record<WorkOrderStatus, { text: string; color: string }> = {
-    pending: { text: '待处理', color: 'orange' },
-    processing: { text: '处理中', color: 'processing' },
-    resolved: { text: '已解决', color: 'success' },
-    closed: { text: '已关闭', color: 'default' },
+    PENDING: { text: '待处理', color: 'orange' },
+    ASSIGNED: { text: '已分配', color: 'blue' },
+    PROCESSING: { text: '处理中', color: 'processing' },
+    RESOLVED: { text: '已解决', color: 'success' },
+    ESCALATED: { text: '已升级', color: 'warning' },
+    CLOSED: { text: '已关闭', color: 'default' },
   }
 
-  const mockLogs = [
-    { time: '2024-01-15 08:30:00', action: '创建工单', operator: '调度员小王', remark: '车辆制冷设备异常，需要紧急检修' },
-    { time: '2024-01-15 08:45:00', action: '分配工单', operator: '工单管理员', remark: '分配给维修组处理' },
-    { time: '2024-01-15 09:00:00', action: '开始处理', operator: '维修组', remark: '已联系司机，前往现场检修' },
-  ]
+  const fetchData = useCallback(async (params?: WorkOrderSearchParams) => {
+    setLoading(true)
+    try {
+      const finalParams: WorkOrderSearchParams = {
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        ...searchParams,
+        ...params,
+      }
+      const res = await getWorkOrderList(finalParams)
+      if (res.code === 0 || res.code === 200) {
+        setData(res.data.data)
+        setPagination(prev => ({
+          ...prev,
+          current: res.data.page,
+          pageSize: res.data.pageSize,
+          total: res.data.total,
+        }))
+      }
+    } catch (error) {
+      console.error('获取工单列表失败:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [pagination.current, pagination.pageSize, searchParams])
+
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   const columns: ColumnsType<WorkOrder> = [
     {
       title: '工单号',
-      dataIndex: 'orderNo',
-      key: 'orderNo',
-      width: 140,
+      dataIndex: 'workOrderNo',
+      key: 'workOrderNo',
+      width: 160,
     },
     {
       title: '类型',
       dataIndex: 'type',
       key: 'type',
       width: 100,
-      render: (type: WorkOrderType) => typeMap[type],
+      render: (type: WorkOrderType) => typeMap[type] || type,
     },
     {
       title: '标题',
@@ -75,10 +96,10 @@ const WorkOrderList = () => {
       title: '优先级',
       dataIndex: 'priority',
       key: 'priority',
-      width: 80,
+      width: 90,
       render: (priority: WorkOrderPriority) => (
-        <Tag color={priorityMap[priority].color}>
-          {priorityMap[priority].text}
+        <Tag color={priorityMap[priority]?.color || 'default'}>
+          {priorityMap[priority]?.text || priority}
         </Tag>
       ),
     },
@@ -86,33 +107,39 @@ const WorkOrderList = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      width: 90,
+      width: 100,
       render: (status: WorkOrderStatus) => (
-        <Tag color={statusMap[status].color}>
-          {statusMap[status].text}
+        <Tag color={statusMap[status]?.color || 'default'}>
+          {statusMap[status]?.text || status}
         </Tag>
       ),
     },
     {
       title: '处理人',
-      dataIndex: 'handler',
-      key: 'handler',
+      key: 'assignee',
       width: 100,
-      render: (handler) => handler || '-',
+      render: (_, record) => record.assigneeName || '-',
+    },
+    {
+      title: '创建人',
+      dataIndex: 'creatorName',
+      key: 'creatorName',
+      width: 100,
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      width: 160,
+      width: 170,
     },
     {
       title: '截止时间',
       dataIndex: 'deadline',
       key: 'deadline',
-      width: 160,
+      width: 170,
       render: (deadline, record) => {
-        const isOverdue = dayjs().isAfter(dayjs(deadline)) && record.status !== 'closed' && record.status !== 'resolved'
+        if (!deadline) return '-'
+        const isOverdue = dayjs().isAfter(dayjs(deadline)) && record.status !== 'CLOSED' && record.status !== 'RESOLVED'
         return (
           <span style={{ color: isOverdue ? '#ff4d4f' : undefined }}>
             {deadline}
@@ -130,7 +157,7 @@ const WorkOrderList = () => {
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleDetail(record)}>
             详情
           </Button>
-          {(record.status === 'pending' || record.status === 'processing') && (
+          {(record.status === 'PENDING' || record.status === 'ASSIGNED' || record.status === 'PROCESSING') && (
             <>
               <Button type="link" size="small" icon={<CheckCircleOutlined />} onClick={() => handleProcess(record)}>
                 处理
@@ -145,8 +172,27 @@ const WorkOrderList = () => {
     },
   ]
 
-  const handleDetail = (record: WorkOrder) => {
-    setCurrentOrder(record)
+  const handleDetail = async (record: WorkOrder) => {
+    try {
+      const res = await getWorkOrderById(record.id)
+      if (res.code === 0 || res.code === 200) {
+        setCurrentOrder(res.data)
+      } else {
+        setCurrentOrder(record)
+      }
+    } catch (error) {
+      setCurrentOrder(record)
+    }
+    try {
+      const logRes = await getWorkOrderLogs(record.id)
+      if (logRes.code === 0 || logRes.code === 200) {
+        setWorkOrderLogs(logRes.data)
+      } else {
+        setWorkOrderLogs([])
+      }
+    } catch (error) {
+      setWorkOrderLogs([])
+    }
     setDetailModalVisible(true)
   }
 
@@ -163,28 +209,60 @@ const WorkOrderList = () => {
   }
 
   const handleSearch = () => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-    }, 500)
+    const values = searchForm.getFieldsValue()
+    const params: WorkOrderSearchParams = {}
+    if (values.type) params.type = values.type
+    if (values.status) params.status = values.status
+    if (values.priority) params.priority = values.priority
+    setSearchParams(params)
+    setPagination(prev => ({ ...prev, current: 1 }))
+    fetchData({ ...params, page: 1 })
   }
 
   const handleReset = () => {
     searchForm.resetFields()
+    setSearchParams({})
+    setPagination(prev => ({ ...prev, current: 1 }))
+    fetchData({ page: 1 })
   }
 
-  const submitProcess = () => {
-    processForm.validateFields().then(() => {
-      message.success('提交成功')
-      setProcessModalVisible(false)
-    })
+  const submitProcess = async () => {
+    if (!currentOrder) return
+    try {
+      const values = await processForm.validateFields()
+      const res = await processWorkOrder(currentOrder.id, { remark: values.remark, status: 'RESOLVED' })
+      if (res.code === 0 || res.code === 200) {
+        message.success('提交成功')
+        setProcessModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('处理工单失败:', error)
+      }
+    }
   }
 
-  const submitEscalate = () => {
-    escalateForm.validateFields().then(() => {
-      message.success('工单已升级')
-      setEscalateModalVisible(false)
-    })
+  const submitEscalate = async () => {
+    if (!currentOrder) return
+    try {
+      const values = await escalateForm.validateFields()
+      const res = await escalateWorkOrder(currentOrder.id, { remark: values.reason })
+      if (res.code === 0 || res.code === 200) {
+        message.success('工单已升级')
+        setEscalateModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('升级工单失败:', error)
+      }
+    }
+  }
+
+  const handleTableChange = (page: number, pageSize: number) => {
+    setPagination(prev => ({ ...prev, current: page, pageSize }))
+    fetchData({ page, pageSize })
   }
 
   return (
@@ -193,26 +271,27 @@ const WorkOrderList = () => {
         <Form form={searchForm} layout="inline" onFinish={handleSearch}>
           <Form.Item name="type" label="类型">
             <Select placeholder="请选择类型" style={{ width: 130 }} allowClear>
-              <Select.Option value="maintenance">设备维护</Select.Option>
-              <Select.Option value="quality">质量问题</Select.Option>
-              <Select.Option value="customer_service">客服工单</Select.Option>
-              <Select.Option value="other">其他</Select.Option>
+              <Select.Option value="TEMPERATURE_ALERT">温度告警</Select.Option>
+              <Select.Option value="REVIEW">复核工单</Select.Option>
+              <Select.Option value="AUDIT">审核工单</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="status" label="状态">
             <Select placeholder="请选择状态" style={{ width: 120 }} allowClear>
-              <Select.Option value="pending">待处理</Select.Option>
-              <Select.Option value="processing">处理中</Select.Option>
-              <Select.Option value="resolved">已解决</Select.Option>
-              <Select.Option value="closed">已关闭</Select.Option>
+              <Select.Option value="PENDING">待处理</Select.Option>
+              <Select.Option value="ASSIGNED">已分配</Select.Option>
+              <Select.Option value="PROCESSING">处理中</Select.Option>
+              <Select.Option value="RESOLVED">已解决</Select.Option>
+              <Select.Option value="ESCALATED">已升级</Select.Option>
+              <Select.Option value="CLOSED">已关闭</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="priority" label="优先级">
             <Select placeholder="请选择优先级" style={{ width: 120 }} allowClear>
-              <Select.Option value="low">低</Select.Option>
-              <Select.Option value="medium">中</Select.Option>
-              <Select.Option value="high">高</Select.Option>
-              <Select.Option value="urgent">紧急</Select.Option>
+              <Select.Option value="INFO">提示</Select.Option>
+              <Select.Option value="WARNING">警告</Select.Option>
+              <Select.Option value="CRITICAL">严重</Select.Option>
+              <Select.Option value="EMERGENCY">紧急</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item>
@@ -229,10 +308,11 @@ const WorkOrderList = () => {
         dataSource={data}
         rowKey="id"
         loading={loading}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1400 }}
         pagination={{
           ...pagination,
-          onChange: (page, pageSize) => setPagination({ ...pagination, current: page, pageSize }),
+          showSizeChanger: true,
+          onChange: handleTableChange,
         }}
       />
 
@@ -248,41 +328,55 @@ const WorkOrderList = () => {
         {currentOrder && (
           <div>
             <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label="工单号">{currentOrder.orderNo}</Descriptions.Item>
+              <Descriptions.Item label="工单号">{currentOrder.workOrderNo}</Descriptions.Item>
               <Descriptions.Item label="状态">
-                <Tag color={statusMap[currentOrder.status].color}>
-                  {statusMap[currentOrder.status].text}
+                <Tag color={statusMap[currentOrder.status]?.color || 'default'}>
+                  {statusMap[currentOrder.status]?.text || currentOrder.status}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="类型">{typeMap[currentOrder.type]}</Descriptions.Item>
+              <Descriptions.Item label="类型">{typeMap[currentOrder.type] || currentOrder.type}</Descriptions.Item>
               <Descriptions.Item label="优先级">
-                <Tag color={priorityMap[currentOrder.priority].color}>
-                  {priorityMap[currentOrder.priority].text}
+                <Tag color={priorityMap[currentOrder.priority]?.color || 'default'}>
+                  {priorityMap[currentOrder.priority]?.text || currentOrder.priority}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="标题" span={2}>{currentOrder.title}</Descriptions.Item>
               <Descriptions.Item label="关联订单">{currentOrder.relatedOrderNo || '-'}</Descriptions.Item>
               <Descriptions.Item label="关联车辆">{currentOrder.vehiclePlate || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建人">{currentOrder.creator}</Descriptions.Item>
-              <Descriptions.Item label="处理人">{currentOrder.handler || '-'}</Descriptions.Item>
+              <Descriptions.Item label="创建人">{currentOrder.creatorName}</Descriptions.Item>
+              <Descriptions.Item label="处理人">{currentOrder.assigneeName || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{currentOrder.createdAt}</Descriptions.Item>
-              <Descriptions.Item label="截止时间">{currentOrder.deadline}</Descriptions.Item>
+              <Descriptions.Item label="截止时间">{currentOrder.deadline || '-'}</Descriptions.Item>
+              {currentOrder.resolvedAt && (
+                <Descriptions.Item label="解决时间">{currentOrder.resolvedAt}</Descriptions.Item>
+              )}
+              {currentOrder.closedAt && (
+                <Descriptions.Item label="关闭时间">{currentOrder.closedAt}</Descriptions.Item>
+              )}
+              <Descriptions.Item label="升级等级">{currentOrder.escalationLevel}</Descriptions.Item>
               <Descriptions.Item label="描述" span={2}>{currentOrder.description}</Descriptions.Item>
+              {currentOrder.remark && (
+                <Descriptions.Item label="备注" span={2}>{currentOrder.remark}</Descriptions.Item>
+              )}
             </Descriptions>
 
-            <Divider orientation="left" style={{ marginTop: 20 }}>处理记录</Divider>
-            <Timeline
-              items={mockLogs.map(log => ({
-                color: 'blue',
-                children: (
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 500 }}>{log.action}</p>
-                    <p style={{ margin: '4px 0', fontSize: 12, color: '#999' }}>操作人：{log.operator} | {log.time}</p>
-                    {log.remark && <p style={{ margin: 0, fontSize: 13 }}>{log.remark}</p>}
-                  </div>
-                ),
-              }))}
-            />
+            {workOrderLogs.length > 0 && (
+              <>
+                <Divider orientation="left" style={{ marginTop: 20 }}>处理记录</Divider>
+                <Timeline
+                  items={workOrderLogs.map(log => ({
+                    color: 'blue',
+                    children: (
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 500 }}>{log.action}</p>
+                        <p style={{ margin: '4px 0', fontSize: 12, color: '#999' }}>操作人：{log.operatorName} | {log.timestamp}</p>
+                        {log.remark && <p style={{ margin: 0, fontSize: 13 }}>{log.remark}</p>}
+                      </div>
+                    ),
+                  }))}
+                />
+              </>
+            )}
           </div>
         )}
       </Modal>
@@ -298,7 +392,7 @@ const WorkOrderList = () => {
       >
         {currentOrder && (
           <p style={{ marginBottom: 16 }}>
-            工单：<strong>{currentOrder.title}</strong>（{currentOrder.orderNo}）
+            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
           </p>
         )}
         <Form form={processForm} layout="vertical">
@@ -319,7 +413,7 @@ const WorkOrderList = () => {
       >
         {currentOrder && (
           <p style={{ marginBottom: 16 }}>
-            工单：<strong>{currentOrder.title}</strong>（{currentOrder.orderNo}）
+            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
           </p>
         )}
         <Form form={escalateForm} layout="vertical">

@@ -1,6 +1,6 @@
 import type { TemperatureZone } from './order'
 
-export type VehicleStatus = 'idle' | 'transit' | 'maintenance' | 'offline'
+export type VehicleStatus = 'IDLE' | 'IN_TRANSIT' | 'MAINTENANCE' | 'DISABLED'
 export type InsulationLevel = 'A' | 'B' | 'C'
 
 export interface Sensor {
@@ -23,11 +23,13 @@ export interface Vehicle {
   status: VehicleStatus
   insulationLevel: InsulationLevel
   currentLocation: string
-  driver?: string
-  phone?: string
+  driverId?: number
+  driverName?: string
+  driverPhone?: string
   temperatureMin?: number
   temperatureMax?: number
   sensors?: Sensor[]
+  remark?: string
   createdAt: string
   updatedAt: string
 }

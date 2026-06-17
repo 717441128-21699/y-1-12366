@@ -1,5 +1,11 @@
 export * from './order'
-export * from './vehicle'
+export type {
+  VehicleStatus,
+  InsulationLevel,
+  Sensor,
+  Vehicle,
+  VehicleSearchParams,
+} from './vehicle'
 export * from './temperature'
 export * from './workOrder'
 export * from './sign'
@@ -22,8 +28,9 @@ export interface PaginationParams {
 }
 
 export interface PaginationResponse<T> {
-  list: T[]
+  data: T[]
   total: number
   page: number
   pageSize: number
+  totalPages: number
 }

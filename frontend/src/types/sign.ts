@@ -1,13 +1,15 @@
-export type SignStatus = 'normal' | 'abnormal' | 'delayed'
+export type SignStatus = 'NORMAL' | 'ABNORMAL' | 'DELAYED'
 
 export interface SignRecord {
   id: number
   signNo: string
   orderId: number
   orderNo: string
-  customer: string
+  customerId?: number
+  customerName?: string
   goods: string
-  signer: string
+  signerId?: number
+  signerName: string
   signTime: string
   signStatus: SignStatus
   temperature?: number
@@ -22,6 +24,23 @@ export interface SignRecord {
   remark?: string
   images?: string[]
   createdAt: string
+}
+
+export interface SignCreateData {
+  orderId: number
+  signerName: string
+  signStatus: SignStatus
+  temperature?: number
+  humidity?: number
+  weightDiff?: number
+  quantityDiff?: number
+  hasDamage?: boolean
+  damageDescription?: string
+  receiverName: string
+  receiverPhone: string
+  signAddress: string
+  remark?: string
+  images?: string[]
 }
 
 export interface SignSearchParams {

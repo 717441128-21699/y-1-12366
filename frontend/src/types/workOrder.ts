@@ -1,10 +1,10 @@
-export type WorkOrderType = 'maintenance' | 'quality' | 'customer_service' | 'other'
-export type WorkOrderPriority = 'low' | 'medium' | 'high' | 'urgent'
-export type WorkOrderStatus = 'pending' | 'processing' | 'resolved' | 'closed'
+export type WorkOrderType = 'TEMPERATURE_ALERT' | 'REVIEW' | 'AUDIT'
+export type WorkOrderPriority = 'INFO' | 'WARNING' | 'CRITICAL' | 'EMERGENCY'
+export type WorkOrderStatus = 'PENDING' | 'ASSIGNED' | 'PROCESSING' | 'RESOLVED' | 'ESCALATED' | 'CLOSED'
 
 export interface WorkOrder {
   id: number
-  orderNo: string
+  workOrderNo: string
   type: WorkOrderType
   priority: WorkOrderPriority
   status: WorkOrderStatus
@@ -14,13 +14,16 @@ export interface WorkOrder {
   relatedOrderNo?: string
   vehicleId?: number
   vehiclePlate?: string
-  handler?: string
-  creator: string
+  assigneeId?: number
+  assigneeName?: string
+  creatorId?: number
+  creatorName: string
   createdAt: string
-  deadline: string
+  deadline?: string
   resolvedAt?: string
   closedAt?: string
   escalationLevel: number
+  remark?: string
 }
 
 export interface WorkOrderSearchParams {
@@ -35,7 +38,8 @@ export interface WorkOrderLog {
   id: number
   workOrderId: number
   action: string
-  operator: string
+  operatorId?: number
+  operatorName: string
   remark?: string
   timestamp: string
 }

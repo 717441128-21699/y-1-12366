@@ -14,7 +14,7 @@ export const createVehicle = (data: Partial<Vehicle>) => {
 }
 
 export const updateVehicle = (id: number, data: Partial<Vehicle>) => {
-  return request.put<Vehicle>(`/vehicles/${id}`, data)
+  return request.patch<Vehicle>(`/vehicles/${id}`, data)
 }
 
 export const deleteVehicle = (id: number) => {

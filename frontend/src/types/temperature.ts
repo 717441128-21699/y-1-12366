@@ -1,3 +1,5 @@
+import type { Sensor } from './vehicle'
+
 export type AlarmLevel = 'info' | 'warning' | 'danger'
 
 export interface AlarmRecord {
@@ -35,4 +37,43 @@ export interface VehicleTemperature {
   maxTemperature: number
   status: 'normal' | 'warning' | 'alarm'
   lastUpdate: string
+  sensors?: Sensor[]
+}
+
+export interface SensorReading {
+  id: number
+  sensorId: number
+  value: number
+  timestamp: string
+}
+
+export type AlertLevel = 'INFO' | 'WARNING' | 'CRITICAL' | 'EMERGENCY'
+
+export interface TemperatureAlert {
+  id: number
+  orderId: number
+  vehicleId: number
+  sensorId: number
+  alertLevel: AlertLevel
+  currentTemp: number
+  thresholdMin: number
+  thresholdMax: number
+  description: string
+  isResolved: boolean
+  createdAt: string
+  resolvedAt?: string
+  resolvedBy?: string
+  resolveRemark?: string
+}
+
+export type NotificationType = 'ORDER_STATUS' | 'TEMPERATURE_ALERT' | 'SIGN_EXCEPTION'
+
+export interface Notification {
+  id: number
+  type: NotificationType
+  title: string
+  content: string
+  relatedId?: number
+  isRead: boolean
+  createdAt: string
 }
