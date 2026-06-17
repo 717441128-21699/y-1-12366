@@ -1,8 +1,10 @@
 import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReadingDto } from './dto/create-reading.dto';
-import { AlertLevel, WorkOrderType } from '@prisma/client';
+import { AlertLevel, WorkOrderType, NotificationType, UserRole } from '@prisma/client';
 import { WorkOrderService } from '../work-order/work-order.service';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class TemperatureService {
@@ -12,7 +14,12 @@ export class TemperatureService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => WorkOrderService))
     private workOrderService: WorkOrderService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private getNotificationService(): NotificationService {
+    return this.moduleRef.get(NotificationService, { strict: false });
+  }
 
   async uploadReading(createReadingDto: CreateReadingDto) {
     const { deviceId, temperature, humidity, readingTime } = createReadingDto;
@@ -137,6 +144,40 @@ export class TemperatureService {
         alertId: alert.id,
         deadline,
       });
+
+      const notificationService = this.getNotificationService();
+      const driverTitle = '温度告警';
+      const dispatcherTitle = '运输温度告警';
+      const alertContent = `车辆 ${sensor.vehicle.plateNumber} 温度异常，当前温度 ${temperature}°C，阈值 [${sensor.minTemp}, ${sensor.maxTemp}]，告警级别: ${alertLevel}`;
+
+      if (sensor.vehicle?.driverId) {
+        await notificationService.create({
+          userId: sensor.vehicle.driverId,
+          type: NotificationType.TEMPERATURE_ALERT,
+          title: driverTitle,
+          content: alertContent,
+          relatedId: alert.id,
+          orderId: order.id,
+        });
+      }
+
+      await notificationService.broadcastToRole(UserRole.DISPATCHER, {
+        type: NotificationType.TEMPERATURE_ALERT,
+        title: dispatcherTitle,
+        content: alertContent,
+        relatedId: alert.id,
+        orderId: order.id,
+      });
+
+      if (alertLevel === AlertLevel.EMERGENCY) {
+        await notificationService.broadcastToRole(UserRole.SUPERVISOR, {
+          type: NotificationType.TEMPERATURE_ALERT,
+          title: dispatcherTitle,
+          content: alertContent,
+          relatedId: alert.id,
+          orderId: order.id,
+        });
+      }
 
       this.logger.log(
         `Alert and work order created for sensor ${sensor.deviceId}, level: ${alertLevel}`,

@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { StandbyService } from '../standby/standby.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
@@ -9,6 +10,7 @@ import {
   NotificationType,
   UserRole,
 } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class WorkOrderService implements OnModuleInit {
@@ -18,7 +20,12 @@ export class WorkOrderService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private standbyService: StandbyService,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private getNotificationService(): NotificationService {
+    return this.moduleRef.get(NotificationService, { strict: false });
+  }
 
   onModuleInit() {
     this.startEscalationCheck();
@@ -204,18 +211,14 @@ export class WorkOrderService implements OnModuleInit {
       include: { assignee: true, order: true },
     });
 
-    const supervisors = await this.prisma.user.findMany({
-      where: { role: UserRole.SUPERVISOR },
+    const notificationService = this.getNotificationService();
+    await notificationService.broadcastToRole(UserRole.SUPERVISOR, {
+      type: NotificationType.WORK_ORDER,
+      title: '⚠️ 工单升级通知',
+      content: `工单 "${updated.title}" 已超时升级，请及时处理。优先级: ${updated.priority}`,
+      relatedId: workOrderId,
+      orderId: updated.orderId ?? undefined,
     });
-
-    for (const supervisor of supervisors) {
-      await this.createNotification(
-        supervisor.id,
-        '⚠️ 工单升级通知',
-        `工单 "${updated.title}" 已超时升级，请及时处理。优先级: ${updated.priority}`,
-        workOrderId,
-      );
-    }
 
     this.logger.log(`Work order ${workOrderId} has been escalated`);
     return updated;
@@ -307,14 +310,19 @@ export class WorkOrderService implements OnModuleInit {
     relatedId?: number,
   ) {
     try {
-      await this.prisma.notification.create({
-        data: {
-          userId,
-          type: NotificationType.WORK_ORDER,
-          title,
-          content,
-          relatedId,
-        },
+      const notificationService = this.getNotificationService();
+      const workOrder = relatedId ? await this.prisma.workOrder.findUnique({
+        where: { id: relatedId },
+        select: { orderId: true },
+      }) : null;
+
+      await notificationService.create({
+        userId,
+        type: NotificationType.WORK_ORDER,
+        title,
+        content,
+        relatedId,
+        orderId: workOrder?.orderId ?? undefined,
       });
     } catch (error) {
       this.logger.error('Failed to create notification:', error);

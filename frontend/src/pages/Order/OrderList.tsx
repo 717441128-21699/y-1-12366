@@ -16,7 +16,7 @@ const OrderList = () => {
   const [createModalVisible, setCreateModalVisible] = useState(false)
   const [assignModalVisible, setAssignModalVisible] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
-  const [assignResult, setAssignResult] = useState<{ vehicleId: number; plateNo: string } | null>(null)
+  const [assignResult, setAssignResult] = useState<{ success: boolean; vehicleId?: number; plateNo?: string; plateNumber?: string; distance?: number; message?: string } | null>(null)
   const [assignLoading, setAssignLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
@@ -171,8 +171,19 @@ const OrderList = () => {
     try {
       const res = await assignVehicle({ orderId: currentOrder.id })
       if (res.code === 0 || res.code === 200) {
-        setAssignResult(res.data)
-        message.success('智能匹配成功')
+        const data = res.data as any
+        const result = {
+          success: data.success !== false,
+          vehicleId: data.vehicleId,
+          plateNo: data.plateNo || data.plateNumber,
+          plateNumber: data.plateNumber || data.plateNo,
+          distance: data.distance,
+          message: data.message,
+        }
+        setAssignResult(result)
+        if (result.success) {
+          message.success('智能匹配成功')
+        }
       }
     } catch (error) {
       console.error('智能分配失败:', error)
@@ -181,10 +192,20 @@ const OrderList = () => {
     }
   }
 
-  const confirmAssign = () => {
+  const confirmAssign = async () => {
     message.success('车辆分配成功')
     setAssignModalVisible(false)
     fetchData()
+    if (currentOrder) {
+      try {
+        const res = await getOrderById(currentOrder.id)
+        if (res.code === 0 || res.code === 200) {
+          setCurrentOrder(res.data)
+        }
+      } catch (error) {
+        console.error('更新订单详情失败:', error)
+      }
+    }
   }
 
   const handleCreate = () => {
@@ -393,12 +414,22 @@ const OrderList = () => {
         title="智能分配车辆"
         open={assignModalVisible}
         onCancel={() => setAssignModalVisible(false)}
-        footer={assignResult ? [
-          <Button key="cancel" onClick={() => setAssignModalVisible(false)}>取消</Button>,
-          <Button key="confirm" type="primary" onClick={confirmAssign}>确认分配</Button>,
-        ] : [
-          <Button key="cancel" onClick={() => setAssignModalVisible(false)}>取消</Button>,
-        ]}
+        footer={(() => {
+          if (!assignResult) {
+            return [
+              <Button key="cancel" onClick={() => setAssignModalVisible(false)}>取消</Button>,
+            ]
+          }
+          if (assignResult.success === false) {
+            return [
+              <Button key="ok" onClick={() => setAssignModalVisible(false)}>知道了</Button>,
+            ]
+          }
+          return [
+            <Button key="cancel" onClick={() => setAssignModalVisible(false)}>取消</Button>,
+            <Button key="confirm" type="primary" onClick={confirmAssign}>确认分配</Button>,
+          ]
+        })()}
         width={500}
       >
         {!assignResult ? (
@@ -408,15 +439,24 @@ const OrderList = () => {
               开始智能匹配
             </Button>
           </div>
+        ) : assignResult.success === false ? (
+          <Result
+            status="warning"
+            title="智能匹配失败"
+            subTitle={assignResult.message || '未能匹配到合适的车辆'}
+          />
         ) : (
           <Result
             status="success"
             title="智能匹配成功"
-            subTitle="系统已为您匹配最合适的车辆"
+            subTitle={assignResult.message || '系统已为您匹配最合适的车辆'}
             extra={[
               <Card key="vehicle" size="small">
-                <p>推荐车辆：<strong>{assignResult.plateNo}</strong></p>
-              </Card>
+                <p>推荐车辆：<strong>{assignResult.plateNumber || assignResult.plateNo}</strong></p>
+                {assignResult.distance !== undefined && (
+                  <p>距离：<strong>{assignResult.distance} km</strong></p>
+                )}
+              </Card>,
             ]}
           />
         )}

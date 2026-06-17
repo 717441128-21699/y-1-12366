@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { AssignVehicleDto } from './dto/assign-vehicle.dto';
 import { PaginationDto, PaginatedResultDto } from '../common/dto/pagination.dto';
 import { calculateDistance } from '../common/utils/geo.util';
-import { TemperatureZone, VehicleStatus, OrderStatus } from '@prisma/client';
+import { TemperatureZone, VehicleStatus, OrderStatus, NotificationType, UserRole } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 export interface AssignmentResult {
   success: boolean;
@@ -17,7 +19,14 @@ export interface AssignmentResult {
 
 @Injectable()
 export class OrderService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private moduleRef: ModuleRef,
+  ) {}
+
+  private getNotificationService(): NotificationService {
+    return this.moduleRef.get(NotificationService, { strict: false });
+  }
 
   private getRequiredInsulationGrade(temperatureZone: TemperatureZone): number {
     const gradeMap: Record<TemperatureZone, number> = {
@@ -249,10 +258,40 @@ export class OrderService {
           vehicleId: vehicleId,
           driverId: vehicle.driverId,
         },
+        include: {
+          driver: true,
+        },
       });
 
       return { vehicle, order };
     });
+
+    try {
+      const notificationService = this.getNotificationService();
+      const { vehicle, order } = result;
+
+      if (order.driverId) {
+        await notificationService.create({
+          userId: order.driverId,
+          type: NotificationType.ORDER_STATUS,
+          title: '新的运输订单已分配',
+          content: `车牌: ${vehicle.plateNumber}, 订单号: ${order.orderNo}, 装货时间: ${order.pickupTime ? new Date(order.pickupTime).toLocaleString('zh-CN') : '待安排'}`,
+          relatedId: orderId,
+          orderId: orderId,
+        });
+      }
+
+      const driverName = order.driver?.name || '未指定';
+      await notificationService.broadcastToRole(UserRole.DISPATCHER, {
+        type: NotificationType.ORDER_STATUS,
+        title: '订单车辆分配成功',
+        content: `订单号: ${order.orderNo}, 车牌: ${vehicle.plateNumber}, 司机: ${driverName}`,
+        relatedId: orderId,
+        orderId: orderId,
+      });
+    } catch (error) {
+      console.error('Failed to send assignment notifications:', error);
+    }
 
     return {
       success: true,

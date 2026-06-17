@@ -27,6 +27,7 @@ export interface Order {
   customer?: Customer
   customerName?: string
   goods: string
+  goodsQuantity?: number
   temperatureZone: TemperatureZone
   status: OrderStatus
   vehicleId?: number

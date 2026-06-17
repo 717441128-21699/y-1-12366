@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Table, Space, Button, Select, Tag, Modal, Form, Input, message, Card, Descriptions, Timeline, Divider } from 'antd'
-import { EyeOutlined, CheckCircleOutlined, ArrowUpOutlined } from '@ant-design/icons'
+import { EyeOutlined, CheckCircleOutlined, ArrowUpOutlined, EditOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, WorkOrderSearchParams, WorkOrderLog } from '@/types'
-import { getWorkOrderList, getWorkOrderById, getWorkOrderLogs, processWorkOrder, escalateWorkOrder } from '@/api/workOrder'
+import { getWorkOrderList, getWorkOrderById, getWorkOrderLogs, processWorkOrder, escalateWorkOrder, createWorkOrder, assignWorkOrder, updateWorkOrder } from '@/api/workOrder'
 import dayjs from 'dayjs'
 
 const WorkOrderList = () => {
@@ -12,13 +12,27 @@ const WorkOrderList = () => {
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [processModalVisible, setProcessModalVisible] = useState(false)
   const [escalateModalVisible, setEscalateModalVisible] = useState(false)
+  const [createModalVisible, setCreateModalVisible] = useState(false)
+  const [editModalVisible, setEditModalVisible] = useState(false)
+  const [assignModalVisible, setAssignModalVisible] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<WorkOrder | null>(null)
   const [workOrderLogs, setWorkOrderLogs] = useState<WorkOrderLog[]>([])
   const [processForm] = Form.useForm()
   const [escalateForm] = Form.useForm()
+  const [createForm] = Form.useForm()
+  const [editForm] = Form.useForm()
+  const [assignForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
   const [searchParams, setSearchParams] = useState<WorkOrderSearchParams>({})
+
+  const mockUsers = [
+    { id: 1, name: '张三' },
+    { id: 2, name: '李四' },
+    { id: 3, name: '王五' },
+    { id: 4, name: '赵六' },
+    { id: 5, name: '钱七' },
+  ]
 
   const typeMap: Record<WorkOrderType, string> = {
     TEMPERATURE_ALERT: '温度告警',
@@ -150,13 +164,23 @@ const WorkOrderList = () => {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 280,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleDetail(record)}>
             详情
           </Button>
+          {record.status !== 'CLOSED' && (
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+              编辑
+            </Button>
+          )}
+          {(record.status === 'PENDING' || record.status === 'ASSIGNED') && (
+            <Button type="link" size="small" icon={<UserOutlined />} onClick={() => handleAssign(record)}>
+              分配
+            </Button>
+          )}
           {(record.status === 'PENDING' || record.status === 'ASSIGNED' || record.status === 'PROCESSING') && (
             <>
               <Button type="link" size="small" icon={<CheckCircleOutlined />} onClick={() => handleProcess(record)}>
@@ -206,6 +230,96 @@ const WorkOrderList = () => {
     setCurrentOrder(record)
     escalateForm.resetFields()
     setEscalateModalVisible(true)
+  }
+
+  const handleCreate = () => {
+    createForm.resetFields()
+    setCreateModalVisible(true)
+  }
+
+  const handleEdit = (record: WorkOrder) => {
+    setCurrentOrder(record)
+    editForm.setFieldsValue({
+      type: record.type,
+      title: record.title,
+      description: record.description,
+      priority: record.priority,
+      relatedOrderNo: record.relatedOrderNo,
+    })
+    setEditModalVisible(true)
+  }
+
+  const handleAssign = (record: WorkOrder) => {
+    setCurrentOrder(record)
+    assignForm.resetFields()
+    if (record.assigneeId) {
+      assignForm.setFieldsValue({ assigneeId: record.assigneeId })
+    }
+    setAssignModalVisible(true)
+  }
+
+  const submitCreate = async () => {
+    try {
+      const values = await createForm.validateFields()
+      const submitData: Partial<WorkOrder> = {
+        type: values.type,
+        title: values.title,
+        description: values.description,
+        priority: values.priority,
+        relatedOrderNo: values.relatedOrderNo,
+      }
+      const res = await createWorkOrder(submitData)
+      if (res.code === 0 || res.code === 200) {
+        message.success('工单创建成功')
+        setCreateModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('创建工单失败:', error)
+      }
+    }
+  }
+
+  const submitEdit = async () => {
+    if (!currentOrder) return
+    try {
+      const values = await editForm.validateFields()
+      const submitData: Partial<WorkOrder> = {
+        type: values.type,
+        title: values.title,
+        description: values.description,
+        priority: values.priority,
+        relatedOrderNo: values.relatedOrderNo,
+      }
+      const res = await updateWorkOrder(currentOrder.id, submitData)
+      if (res.code === 0 || res.code === 200) {
+        message.success('工单更新成功')
+        setEditModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('更新工单失败:', error)
+      }
+    }
+  }
+
+  const submitAssign = async () => {
+    if (!currentOrder) return
+    try {
+      const values = await assignForm.validateFields()
+      const res = await assignWorkOrder(currentOrder.id, values.assigneeId)
+      if (res.code === 0 || res.code === 200) {
+        message.success('已分配')
+        setAssignModalVisible(false)
+        fetchData()
+      }
+    } catch (error) {
+      if (error !== false) {
+        console.error('分配工单失败:', error)
+      }
+    }
   }
 
   const handleSearch = () => {
@@ -302,6 +416,12 @@ const WorkOrderList = () => {
           </Form.Item>
         </Form>
       </Card>
+
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+          新建工单
+        </Button>
+      </div>
 
       <Table
         columns={columns}
@@ -419,6 +539,109 @@ const WorkOrderList = () => {
         <Form form={escalateForm} layout="vertical">
           <Form.Item name="reason" label="升级原因" rules={[{ required: true, message: '请输入升级原因' }]}>
             <Input.TextArea rows={4} placeholder="请输入升级原因" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新建工单"
+        open={createModalVisible}
+        onCancel={() => setCreateModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setCreateModalVisible(false)}>取消</Button>,
+          <Button key="submit" type="primary" onClick={submitCreate}>确定</Button>,
+        ]}
+        width={600}
+      >
+        <Form form={createForm} layout="vertical">
+          <Form.Item name="type" label="工单类型" rules={[{ required: true, message: '请选择工单类型' }]}>
+            <Select placeholder="请选择工单类型">
+              <Select.Option value="TEMPERATURE_ALERT">温度告警</Select.Option>
+              <Select.Option value="REVIEW">复核工单</Select.Option>
+              <Select.Option value="AUDIT">审核工单</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input placeholder="请输入工单标题" />
+          </Form.Item>
+          <Form.Item name="description" label="描述" rules={[{ required: true, message: '请输入描述' }]}>
+            <Input.TextArea rows={4} placeholder="请输入工单描述" />
+          </Form.Item>
+          <Form.Item name="priority" label="优先级" rules={[{ required: true, message: '请选择优先级' }]}>
+            <Select placeholder="请选择优先级">
+              <Select.Option value="INFO">提示</Select.Option>
+              <Select.Option value="WARNING">警告</Select.Option>
+              <Select.Option value="CRITICAL">严重</Select.Option>
+              <Select.Option value="EMERGENCY">紧急</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="relatedOrderNo" label="关联订单号">
+            <Input placeholder="请输入关联订单号（可选）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="编辑工单"
+        open={editModalVisible}
+        onCancel={() => setEditModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setEditModalVisible(false)}>取消</Button>,
+          <Button key="submit" type="primary" onClick={submitEdit}>保存</Button>,
+        ]}
+        width={600}
+      >
+        <Form form={editForm} layout="vertical">
+          <Form.Item name="type" label="工单类型" rules={[{ required: true, message: '请选择工单类型' }]}>
+            <Select placeholder="请选择工单类型">
+              <Select.Option value="TEMPERATURE_ALERT">温度告警</Select.Option>
+              <Select.Option value="REVIEW">复核工单</Select.Option>
+              <Select.Option value="AUDIT">审核工单</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+            <Input placeholder="请输入工单标题" />
+          </Form.Item>
+          <Form.Item name="description" label="描述" rules={[{ required: true, message: '请输入描述' }]}>
+            <Input.TextArea rows={4} placeholder="请输入工单描述" />
+          </Form.Item>
+          <Form.Item name="priority" label="优先级" rules={[{ required: true, message: '请选择优先级' }]}>
+            <Select placeholder="请选择优先级">
+              <Select.Option value="INFO">提示</Select.Option>
+              <Select.Option value="WARNING">警告</Select.Option>
+              <Select.Option value="CRITICAL">严重</Select.Option>
+              <Select.Option value="EMERGENCY">紧急</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="relatedOrderNo" label="关联订单号">
+            <Input placeholder="请输入关联订单号（可选）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="分配工单"
+        open={assignModalVisible}
+        onCancel={() => setAssignModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setAssignModalVisible(false)}>取消</Button>,
+          <Button key="submit" type="primary" onClick={submitAssign}>确定</Button>,
+        ]}
+      >
+        {currentOrder && (
+          <p style={{ marginBottom: 16 }}>
+            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
+          </p>
+        )}
+        <Form form={assignForm} layout="vertical">
+          <Form.Item name="assigneeId" label="处理人" rules={[{ required: true, message: '请选择处理人' }]}>
+            <Select placeholder="请选择处理人">
+              {mockUsers.map(user => (
+                <Select.Option key={user.id} value={user.id}>
+                  {user.name}
+                </Select.Option>
+              ))}
+            </Select>
           </Form.Item>
         </Form>
       </Modal>

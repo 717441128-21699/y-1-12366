@@ -37,6 +37,7 @@ export interface ReportStats {
 export interface ReportSearchParams {
   startDate: string
   endDate: string
+  line?: string
   route?: string
   vehicleId?: number
 }

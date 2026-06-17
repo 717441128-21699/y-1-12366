@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Table, Space, Button, Input, Select, Tag, Modal, Descriptions, Card, DatePicker, Form, Badge, Alert, InputNumber, Switch, message } from 'antd'
+import { Table, Space, Button, Input, Select, Tag, Modal, Descriptions, Card, DatePicker, Form, Badge, Alert, InputNumber, message } from 'antd'
 import { SearchOutlined, EyeOutlined, WarningOutlined, QrcodeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { SignRecord, SignStatus, SignSearchParams, SignCreateData } from '@/types'
+import type { SignRecord, SignStatus, SignSearchParams, SignCreateData, Order } from '@/types'
 import { getSignList, getSignById, createSign } from '@/api/sign'
+import { getOrderList, getOrderById } from '@/api/order'
 
 const { RangePicker } = DatePicker
 
@@ -17,6 +18,9 @@ const SignList = () => {
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
   const [searchParams, setSearchParams] = useState<SignSearchParams>({})
+  const [pendingOrders, setPendingOrders] = useState<Order[]>([])
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [expectedQuantity, setExpectedQuantity] = useState<number | null>(null)
 
   const statusMap: Record<SignStatus, { text: string; color: string }> = {
     NORMAL: { text: '正常', color: 'success' },
@@ -162,25 +166,64 @@ const SignList = () => {
     fetchData({ page: 1 })
   }
 
-  const handleOpenSign = () => {
+  const handleOpenSign = async () => {
     signForm.resetFields()
-    signForm.setFieldsValue({
-      signStatus: 'NORMAL',
-      hasDamage: false,
-    })
+    setSelectedOrder(null)
+    setExpectedQuantity(null)
+    try {
+      const res = await getOrderList({ status: 'DELIVERED', page: 1, pageSize: 100 })
+      if (res.code === 0 || res.code === 200) {
+        setPendingOrders(res.data.data || [])
+      } else {
+        setPendingOrders([])
+      }
+    } catch (error) {
+      setPendingOrders([])
+    }
     setSignModalVisible(true)
+  }
+
+  const handleOrderSelect = async (orderId: number) => {
+    const order = pendingOrders.find(o => o.id === orderId) || null
+    setSelectedOrder(order)
+    signForm.setFieldsValue({ orderId })
+    try {
+      const res = await getOrderById(orderId)
+      if (res.code === 0 || res.code === 200) {
+        const qty = res.data.goodsQuantity
+        setExpectedQuantity(qty !== undefined ? qty : null)
+        if (res.data.customerName) {
+          signForm.setFieldsValue({ customerName: res.data.customerName })
+        }
+      } else {
+        setExpectedQuantity(order?.goodsQuantity !== undefined ? order.goodsQuantity : null)
+      }
+    } catch (error) {
+      setExpectedQuantity(order?.goodsQuantity !== undefined ? order.goodsQuantity : null)
+    }
   }
 
   const handleSubmitSign = async () => {
     try {
       const values = await signForm.validateFields()
-      const submitData: SignCreateData = {
-        ...values,
-        hasDamage: values.hasDamage || false,
+      const actualQty = Number(values.actualQuantity)
+      const expectedQty = expectedQuantity !== null ? expectedQuantity : actualQty
+      const diffPercent = expectedQty > 0 ? Math.abs(actualQty - expectedQty) / expectedQty * 100 : 0
+
+      const submitData = {
+        orderId: values.orderId,
+        actualQuantity: actualQty,
+        signedBy: values.signedBy,
+        remark: values.remark,
       }
-      const res = await createSign(submitData)
+
+      const res = await createSign(submitData as unknown as SignCreateData)
       if (res.code === 0 || res.code === 200) {
-        message.success('签收成功')
+        if (diffPercent > 5) {
+          message.warning('签收异常，已自动触发复盘工单')
+        } else {
+          message.success('签收成功')
+        }
         setSignModalVisible(false)
         fetchData()
       }
@@ -315,48 +358,44 @@ const SignList = () => {
         width={600}
       >
         <Form form={signForm} layout="vertical">
-          <Form.Item name="orderId" label="订单ID" rules={[{ required: true, message: '请输入订单ID' }]}>
-            <InputNumber style={{ width: '100%' }} min={1} placeholder="请输入订单ID" />
-          </Form.Item>
-          <Form.Item name="signerName" label="签收人姓名" rules={[{ required: true, message: '请输入签收人姓名' }]}>
-            <Input placeholder="请输入签收人姓名" />
-          </Form.Item>
-          <Form.Item name="signStatus" label="签收状态" rules={[{ required: true, message: '请选择签收状态' }]}>
-            <Select placeholder="请选择签收状态">
-              <Select.Option value="NORMAL">正常</Select.Option>
-              <Select.Option value="ABNORMAL">异常</Select.Option>
-              <Select.Option value="DELAYED">延迟</Select.Option>
+          <Form.Item label="选择订单" name="orderId" rules={[{ required: true, message: '请选择订单' }]}>
+            <Select
+              placeholder="请从待签收订单列表选择"
+              showSearch
+              optionFilterProp="label"
+              onChange={(value) => handleOrderSelect(value)}
+            >
+              {pendingOrders.length > 0 ? pendingOrders.map(order => (
+                <Select.Option key={order.id} value={order.id} label={order.orderNo}>
+                  {order.orderNo} - {order.goods} ({order.customerName || '客户'})
+                </Select.Option>
+              )) : (
+                <Select.Option value={0} disabled>暂无待签收订单</Select.Option>
+              )}
             </Select>
           </Form.Item>
-          <Form.Item name="receiverName" label="收货人姓名" rules={[{ required: true, message: '请输入收货人姓名' }]}>
-            <Input placeholder="请输入收货人姓名" />
+          <Form.Item label="应收数量">
+            <InputNumber
+              style={{ width: '100%' }}
+              value={expectedQuantity}
+              disabled
+              placeholder="选择订单后自动显示"
+            />
+            {selectedOrder && (
+              <span style={{ fontSize: 12, color: '#999' }}>
+                订单货物：{selectedOrder.goods}
+                {selectedOrder.customerName && ` | 客户：${selectedOrder.customerName}`}
+              </span>
+            )}
           </Form.Item>
-          <Form.Item name="receiverPhone" label="收货人电话" rules={[{ required: true, message: '请输入收货人电话' }]}>
-            <Input placeholder="请输入收货人电话" />
+          <Form.Item label="实收数量" name="actualQuantity" rules={[{ required: true, message: '请输入实收数量' }]}>
+            <InputNumber style={{ width: '100%' }} min={0} placeholder="请输入实收数量" />
           </Form.Item>
-          <Form.Item name="signAddress" label="签收地址" rules={[{ required: true, message: '请输入签收地址' }]}>
-            <Input placeholder="请输入签收地址" />
+          <Form.Item label="签收人姓名" name="signedBy" rules={[{ required: true, message: '请输入签收人姓名' }]}>
+            <Input placeholder="请输入签收人姓名" />
           </Form.Item>
-          <Form.Item name="temperature" label="签收时温度(℃)">
-            <InputNumber style={{ width: '100%' }} placeholder="请输入签收时温度" />
-          </Form.Item>
-          <Form.Item name="humidity" label="签收时湿度(%)">
-            <InputNumber style={{ width: '100%' }} min={0} max={100} placeholder="请输入签收时湿度" />
-          </Form.Item>
-          <Form.Item name="weightDiff" label="重量差异(kg)">
-            <InputNumber style={{ width: '100%' }} placeholder="请输入重量差异，正数表示多收，负数表示少收" />
-          </Form.Item>
-          <Form.Item name="quantityDiff" label="数量差异(件)">
-            <InputNumber style={{ width: '100%' }} placeholder="请输入数量差异，正数表示多收，负数表示少收" />
-          </Form.Item>
-          <Form.Item name="hasDamage" label="是否有损坏" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item name="damageDescription" label="损坏描述">
-            <Input.TextArea rows={3} placeholder="如有损坏，请描述具体情况" />
-          </Form.Item>
-          <Form.Item name="remark" label="备注">
-            <Input.TextArea rows={3} placeholder="请输入备注信息" />
+          <Form.Item label="备注" name="remark">
+            <Input.TextArea rows={3} placeholder="请输入备注信息（选填）" />
           </Form.Item>
         </Form>
       </Modal>

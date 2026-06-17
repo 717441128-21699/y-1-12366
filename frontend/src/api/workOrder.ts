@@ -17,6 +17,10 @@ export const createWorkOrder = (data: Partial<WorkOrder>) => {
   return request.post<WorkOrder>('/work-orders', data)
 }
 
+export const updateWorkOrder = (id: number, data: Partial<WorkOrder>) => {
+  return request.patch<WorkOrder>(`/work-orders/${id}`, data)
+}
+
 export const processWorkOrder = (id: number, data: { remark?: string; status?: string }) => {
   return request.patch(`/work-orders/${id}/process`, data)
 }

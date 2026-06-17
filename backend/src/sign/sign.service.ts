@@ -1,11 +1,20 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSignDto } from './dto/create-sign.dto';
-import { WorkOrderType, SignStatus, NotificationType, AlertLevel, OrderStatus } from '@prisma/client';
+import { WorkOrderType, SignStatus, NotificationType, AlertLevel, OrderStatus, UserRole } from '@prisma/client';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class SignService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private moduleRef: ModuleRef,
+  ) {}
+
+  private getNotificationService(): NotificationService {
+    return this.moduleRef.get(NotificationService, { strict: false });
+  }
 
   private readonly THRESHOLD_PERCENT = 5;
 
@@ -104,27 +113,36 @@ export class SignService {
       },
     });
 
-    const warehouseUsers = await this.prisma.user.findMany({
-      where: {
-        role: {
-          in: ['DISPATCHER', 'SUPERVISOR'],
-        },
-      },
+    const notificationService = this.getNotificationService();
+    const title = `签收异常提醒 - 订单${order?.orderNo}`;
+    const content = `预定数量: ${expectedQuantity}, 实收数量: ${actualQuantity}, 差异比例: ${diffPercent.toFixed(2)}%，请及时处理`;
+
+    if (order?.driverId) {
+      await notificationService.create({
+        userId: order.driverId,
+        type: NotificationType.SIGN_EXCEPTION,
+        title,
+        content,
+        relatedId: orderId,
+        orderId: orderId,
+      });
+    }
+
+    await notificationService.broadcastToRole(UserRole.DISPATCHER, {
+      type: NotificationType.SIGN_EXCEPTION,
+      title,
+      content,
+      relatedId: orderId,
+      orderId: orderId,
     });
 
-    const notificationPromises = warehouseUsers.map(user =>
-      this.prisma.notification.create({
-        data: {
-          userId: user.id,
-          type: NotificationType.SIGN_EXCEPTION,
-          title: `签收异常提醒 - 订单${order?.orderNo}`,
-          content: `预定数量: ${expectedQuantity}, 实收数量: ${actualQuantity}, 差异比例: ${diffPercent.toFixed(2)}%，请及时处理`,
-          relatedId: orderId,
-        },
-      }),
-    );
-
-    await Promise.all(notificationPromises);
+    await notificationService.broadcastToRole(UserRole.SUPERVISOR, {
+      type: NotificationType.SIGN_EXCEPTION,
+      title,
+      content,
+      relatedId: orderId,
+      orderId: orderId,
+    });
   }
 
   async findAll(page: number = 1, pageSize: number = 10) {
