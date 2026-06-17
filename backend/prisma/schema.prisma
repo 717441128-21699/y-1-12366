@@ -98,6 +98,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  customer Customer?
+
   vehicles         Vehicle[]         @relation("DriverVehicles")
   orders           Order[]           @relation("DriverOrders")
   workOrders       WorkOrder[]       @relation("AssignedWorkOrders")
@@ -172,8 +174,10 @@ model Customer {
   phone     String
   address   String
   email     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  userId    Int?     @unique
+  user      User?     @relation(fields: [userId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   orders Order[]
 }
@@ -290,7 +294,7 @@ model SignRecord {
   order            Order      @relation(fields: [orderId], references: [id])
   vehicleId        Int
   vehicle          Vehicle    @relation(fields: [vehicleId], references: [id])
-  signedBy         Int?
+  signedBy         String?
   signTime         DateTime   @default(now())
   signStatus       SignStatus @default(PENDING)
   expectedQuantity Int

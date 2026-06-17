@@ -159,13 +159,20 @@ const ReportCenter = () => {
     fetchReportData()
   }, [dateRange, selectedRoute, fetchReportData])
 
+  const getRouteName = (code: string) => {
+    const route = fixedRouteOptions.find(r => r.code === code)
+    return route ? route.name : '全部线路'
+  }
+
+  const currentRouteName = getRouteName(selectedRoute)
+
   const onTimeChartOption = useMemo(() => {
     const sorted = [...reportData].sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime())
     const hasData = sorted.length > 0
 
     return {
       title: {
-        text: '准时率趋势',
+        text: `准时率趋势（${currentRouteName}）`,
         left: 'center',
         textStyle: { fontSize: 14, fontWeight: 'normal' },
       },
@@ -224,7 +231,7 @@ const ReportCenter = () => {
         },
       ],
     }
-  }, [reportData, selectedRoute])
+  }, [reportData, selectedRoute, currentRouteName])
 
   const temperatureChartOption = useMemo(() => {
     const sorted = [...reportData].sort((a, b) => new Date(a.reportDate).getTime() - new Date(b.reportDate).getTime())
@@ -232,7 +239,7 @@ const ReportCenter = () => {
 
     return {
       title: {
-        text: '温度合格率趋势',
+        text: `温度合格率趋势（${currentRouteName}）`,
         left: 'center',
         textStyle: { fontSize: 14, fontWeight: 'normal' },
       },
@@ -291,7 +298,7 @@ const ReportCenter = () => {
         },
       ],
     }
-  }, [reportData, selectedRoute])
+  }, [reportData, selectedRoute, currentRouteName])
 
   const routeChartOption = useMemo(() => {
     const grouped = new Map<string, number>()
@@ -318,7 +325,7 @@ const ReportCenter = () => {
 
     return {
       title: {
-        text: '各线路运输量统计',
+        text: `各线路运输量统计（${currentRouteName}）`,
         left: 'center',
         textStyle: { fontSize: 14, fontWeight: 'normal' },
       },
@@ -364,7 +371,7 @@ const ReportCenter = () => {
         },
       ],
     }
-  }, [reportData, routeOptions, selectedRoute, stats.totalOrders])
+  }, [reportData, routeOptions, selectedRoute, stats.totalOrders, currentRouteName])
 
   const handleExport = async () => {
     try {
@@ -449,11 +456,6 @@ const ReportCenter = () => {
     }
   }
 
-  const getRouteName = (code: string) => {
-    const route = fixedRouteOptions.find(r => r.code === code)
-    return route ? route.name : '全部线路'
-  }
-
   return (
     <Spin spinning={loading}>
       <div>
@@ -495,10 +497,14 @@ const ReportCenter = () => {
               导出Excel
             </Button>
             <span style={{ marginLeft: 'auto', color: '#666', fontSize: 12 }}>
-              当前: {getRouteName(selectedRoute)} | {dateRange[0].format('YYYY-MM-DD')} ~ {dateRange[1].format('YYYY-MM-DD')}
+              当前: {currentRouteName} | {dateRange[0].format('YYYY-MM-DD')} ~ {dateRange[1].format('YYYY-MM-DD')}
             </span>
           </div>
         </Card>
+
+        <div style={{ marginBottom: 16, padding: '8px 12px', background: '#f0f5ff', borderRadius: 4, fontSize: 13, color: '#555' }}>
+          当前线路：{currentRouteName} | 日期范围：{dateRange[0].format('YYYY-MM-DD')} ~ {dateRange[1].format('YYYY-MM-DD')}
+        </div>
 
         <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col xs={24} sm={12} lg={8}>

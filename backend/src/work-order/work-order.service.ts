@@ -9,6 +9,7 @@ import {
   AlertLevel,
   NotificationType,
   UserRole,
+  WorkOrderType,
 } from '@prisma/client';
 import { NotificationService } from '../notification/notification.service';
 
@@ -295,6 +296,18 @@ export class WorkOrderService implements OnModuleInit {
   async findOne(id: number) {
     return this.prisma.workOrder.findUnique({
       where: { id },
+      include: { assignee: true, order: true },
+    });
+  }
+
+  async update(
+    id: number,
+    data: { title?: string; description?: string; priority?: AlertLevel; type?: WorkOrderType },
+  ) {
+    await this.findOne(id);
+    return this.prisma.workOrder.update({
+      where: { id },
+      data,
       include: { assignee: true, order: true },
     });
   }

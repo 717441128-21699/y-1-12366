@@ -10,7 +10,7 @@ import {
 import { WorkOrderService } from './work-order.service';
 import { CreateWorkOrderDto } from './dto/create-work-order.dto';
 import { ProcessWorkOrderDto } from './dto/process-work-order.dto';
-import { WorkOrderStatus, AlertLevel } from '@prisma/client';
+import { WorkOrderStatus, AlertLevel, WorkOrderType } from '@prisma/client';
 
 @Controller('work-orders')
 export class WorkOrderController {
@@ -81,6 +81,14 @@ export class WorkOrderController {
   @Patch(':id/escalate')
   escalate(@Param('id') id: string) {
     return this.workOrderService.escalate(parseInt(id));
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() body: { title?: string; description?: string; priority?: AlertLevel; type?: WorkOrderType },
+  ) {
+    return this.workOrderService.update(parseInt(id), body);
   }
 
   @Post('check-escalation')

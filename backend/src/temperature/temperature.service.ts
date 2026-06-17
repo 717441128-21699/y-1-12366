@@ -179,6 +179,22 @@ export class TemperatureService {
         });
       }
 
+      const orderWithCustomer = await this.prisma.order.findUnique({
+        where: { id: order.id },
+        include: { customer: { include: { user: true } } },
+      });
+
+      if (orderWithCustomer?.customer?.userId) {
+        await notificationService.create({
+          userId: orderWithCustomer.customer.userId,
+          type: NotificationType.TEMPERATURE_ALERT,
+          title: '运输温度告警',
+          content: `您的订单运输中出现温度告警，当前温度: ${temperature}°C，阈值范围: [${sensor.minTemp}, ${sensor.maxTemp}]°C`,
+          relatedId: alert.id,
+          orderId: order.id,
+        });
+      }
+
       this.logger.log(
         `Alert and work order created for sensor ${sensor.deviceId}, level: ${alertLevel}`,
       );

@@ -1,6 +1,11 @@
 import request from '@/utils/request'
 import type { WorkOrder, WorkOrderSearchParams, PaginationResponse, WorkOrderLog } from '@/types'
 
+interface UserItem {
+  id: number
+  name: string
+}
+
 export const getWorkOrderList = (params: WorkOrderSearchParams) => {
   return request.get<PaginationResponse<WorkOrder>>('/work-orders', { params })
 }
@@ -31,4 +36,8 @@ export const assignWorkOrder = (id: number, assigneeId: number) => {
 
 export const escalateWorkOrder = (id: number, data: { remark?: string }) => {
   return request.patch(`/work-orders/${id}/escalate`, data)
+}
+
+export const getUsers = () => {
+  return request.get<UserItem[]>('/users')
 }

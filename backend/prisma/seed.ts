@@ -89,6 +89,45 @@ async function main() {
     },
   });
 
+  const customer1_user = await prisma.user.upsert({
+    where: { email: 'liu@xianyue.com' },
+    update: {},
+    create: {
+      email: 'liu@xianyue.com',
+      name: '刘经理',
+      phone: '13900002001',
+      role: UserRole.CUSTOMER,
+      password: hashedPassword,
+      skills: [],
+    },
+  });
+
+  const customer2_user = await prisma.user.upsert({
+    where: { email: 'chen@weimei.com' },
+    update: {},
+    create: {
+      email: 'chen@weimei.com',
+      name: '陈主管',
+      phone: '13900002002',
+      role: UserRole.CUSTOMER,
+      password: hashedPassword,
+      skills: [],
+    },
+  });
+
+  const customer3_user = await prisma.user.upsert({
+    where: { email: 'zhao@kangtai.com' },
+    update: {},
+    create: {
+      email: 'zhao@kangtai.com',
+      name: '赵经理',
+      phone: '13900002003',
+      role: UserRole.CUSTOMER,
+      password: hashedPassword,
+      skills: [],
+    },
+  });
+
   const customer1 = await prisma.customer.upsert({
     where: { id: 1 },
     update: {},
@@ -98,6 +137,7 @@ async function main() {
       phone: '13900002001',
       address: '北京市朝阳区建国路88号',
       email: 'liu@xianyue.com',
+      userId: customer1_user.id,
     },
   });
 
@@ -110,6 +150,7 @@ async function main() {
       phone: '13900002002',
       address: '北京市海淀区中关村大街1号',
       email: 'chen@weimei.com',
+      userId: customer2_user.id,
     },
   });
 
@@ -122,6 +163,7 @@ async function main() {
       phone: '13900002003',
       address: '北京市西城区金融街15号',
       email: 'zhao@kangtai.com',
+      userId: customer3_user.id,
     },
   });
 
@@ -367,7 +409,7 @@ async function main() {
     create: {
       orderId: order3.id,
       vehicleId: vehicle1.id,
-      signedBy: customer3.id,
+      signedBy: '赵经理',
       signStatus: 'SIGNED',
       expectedQuantity: 100,
       actualQuantity: 98,

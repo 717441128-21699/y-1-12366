@@ -260,6 +260,7 @@ export class OrderService {
         },
         include: {
           driver: true,
+          customer: { include: { user: true } },
         },
       });
 
@@ -289,6 +290,17 @@ export class OrderService {
         relatedId: orderId,
         orderId: orderId,
       });
+
+      if (order.customer?.userId) {
+        await notificationService.create({
+          userId: order.customer.userId,
+          type: NotificationType.ORDER_STATUS,
+          title: '您的订单已分配车辆',
+          content: `订单号: ${order.orderNo}, 车牌号: ${vehicle.plateNumber}, 预计送达时间: ${order.deliveryTime ? new Date(order.deliveryTime).toLocaleString('zh-CN') : '待安排'}`,
+          relatedId: orderId,
+          orderId: orderId,
+        });
+      }
     } catch (error) {
       console.error('Failed to send assignment notifications:', error);
     }

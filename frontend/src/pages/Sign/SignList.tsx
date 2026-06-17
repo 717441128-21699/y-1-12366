@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Table, Space, Button, Input, Select, Tag, Modal, Descriptions, Card, DatePicker, Form, Badge, Alert, InputNumber, message } from 'antd'
-import { SearchOutlined, EyeOutlined, WarningOutlined, QrcodeOutlined } from '@ant-design/icons'
+import { Table, Space, Button, Input, Select, Tag, Modal, Descriptions, Card, DatePicker, Form, Alert, InputNumber, message } from 'antd'
+import { SearchOutlined, EyeOutlined, QrcodeOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { SignRecord, SignStatus, SignSearchParams, SignCreateData, Order } from '@/types'
+import type { SignRecord, SignStatus, SignSearchParams, SignCreateData } from '@/types'
 import { getSignList, getSignById, createSign } from '@/api/sign'
 import { getOrderList, getOrderById } from '@/api/order'
+import type { Order } from '@/types'
 
 const { RangePicker } = DatePicker
 
@@ -23,9 +24,9 @@ const SignList = () => {
   const [expectedQuantity, setExpectedQuantity] = useState<number | null>(null)
 
   const statusMap: Record<SignStatus, { text: string; color: string }> = {
-    NORMAL: { text: '正常', color: 'success' },
-    ABNORMAL: { text: '异常', color: 'error' },
-    DELAYED: { text: '延迟', color: 'warning' },
+    PENDING: { text: '待签收', color: 'orange' },
+    SIGNED: { text: '已签收', color: 'green' },
+    DISPUTED: { text: '有争议', color: 'red' },
   }
 
   const fetchData = useCallback(async (params?: SignSearchParams) => {
@@ -60,55 +61,66 @@ const SignList = () => {
 
   const columns: ColumnsType<SignRecord> = [
     {
-      title: '签收单号',
-      dataIndex: 'signNo',
-      key: 'signNo',
-      width: 160,
-    },
-    {
       title: '订单号',
-      dataIndex: 'orderNo',
       key: 'orderNo',
       width: 160,
+      render: (_, record) => record.order?.orderNo || '-',
     },
     {
       title: '客户',
       key: 'customer',
       width: 120,
-      render: (_, record) => record.customerName || '-',
+      render: (_, record) => record.order?.customer?.name || '-',
     },
     {
       title: '货物',
-      dataIndex: 'goods',
-      key: 'goods',
+      key: 'goodsName',
       width: 120,
+      render: (_, record) => record.order?.goodsName || '-',
     },
     {
-      title: '状态',
+      title: '应收数量',
+      dataIndex: 'expectedQuantity',
+      key: 'expectedQuantity',
+      width: 100,
+    },
+    {
+      title: '实收数量',
+      dataIndex: 'actualQuantity',
+      key: 'actualQuantity',
+      width: 100,
+    },
+    {
+      title: '差异',
+      key: 'difference',
+      width: 120,
+      render: (_, record) => {
+        if (record.isOverThreshold) {
+          return (
+            <span style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+              {record.difference?.toFixed(1)}% <Tag color="red">异常</Tag>
+            </span>
+          )
+        }
+        return <span>{record.difference?.toFixed(1)}%</span>
+      },
+    },
+    {
+      title: '签收人',
+      key: 'signedBy',
+      width: 100,
+      render: (_, record) => record.signedBy || '-',
+    },
+    {
+      title: '签收状态',
       dataIndex: 'signStatus',
       key: 'signStatus',
-      width: 90,
+      width: 100,
       render: (status: SignStatus) => (
         <Tag color={statusMap[status]?.color || 'default'}>
           {statusMap[status]?.text || status}
         </Tag>
       ),
-    },
-    {
-      title: '差异预警',
-      key: 'warning',
-      width: 100,
-      render: (_, record) => (
-        record.signStatus === 'ABNORMAL' || record.hasDamage || (record.weightDiff !== undefined && record.weightDiff !== 0)
-          ? <Badge status="error" text={<span style={{ color: '#ff4d4f' }}><WarningOutlined /> 有差异</span>} />
-          : <Badge status="success" text="正常" />
-      ),
-    },
-    {
-      title: '签收人',
-      dataIndex: 'signerName',
-      key: 'signerName',
-      width: 100,
     },
     {
       title: '签收时间',
@@ -119,7 +131,7 @@ const SignList = () => {
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 100,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
@@ -192,9 +204,6 @@ const SignList = () => {
       if (res.code === 0 || res.code === 200) {
         const qty = res.data.goodsQuantity
         setExpectedQuantity(qty !== undefined ? qty : null)
-        if (res.data.customerName) {
-          signForm.setFieldsValue({ customerName: res.data.customerName })
-        }
       } else {
         setExpectedQuantity(order?.goodsQuantity !== undefined ? order.goodsQuantity : null)
       }
@@ -210,14 +219,14 @@ const SignList = () => {
       const expectedQty = expectedQuantity !== null ? expectedQuantity : actualQty
       const diffPercent = expectedQty > 0 ? Math.abs(actualQty - expectedQty) / expectedQty * 100 : 0
 
-      const submitData = {
+      const submitData: SignCreateData = {
         orderId: values.orderId,
         actualQuantity: actualQty,
         signedBy: values.signedBy,
         remark: values.remark,
       }
 
-      const res = await createSign(submitData as unknown as SignCreateData)
+      const res = await createSign(submitData)
       if (res.code === 0 || res.code === 200) {
         if (diffPercent > 5) {
           message.warning('签收异常，已自动触发复盘工单')
@@ -248,9 +257,9 @@ const SignList = () => {
           </Form.Item>
           <Form.Item name="signStatus" label="状态">
             <Select placeholder="请选择状态" style={{ width: 130 }} allowClear>
-              <Select.Option value="NORMAL">正常</Select.Option>
-              <Select.Option value="ABNORMAL">异常</Select.Option>
-              <Select.Option value="DELAYED">延迟</Select.Option>
+              <Select.Option value="PENDING">待签收</Select.Option>
+              <Select.Option value="SIGNED">已签收</Select.Option>
+              <Select.Option value="DISPUTED">有争议</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="dateRange" label="日期范围">
@@ -295,10 +304,10 @@ const SignList = () => {
       >
         {currentRecord && (
           <div>
-            {currentRecord.signStatus === 'ABNORMAL' && (
+            {currentRecord.isOverThreshold && (
               <Alert
-                message="存在差异，请关注"
-                description={currentRecord.damageDescription || '货物存在数量/重量/质量差异'}
+                message="签收差异超过阈值，请关注"
+                description={`差异率: ${currentRecord.difference?.toFixed(1)}%`}
                 type="warning"
                 showIcon
                 style={{ marginBottom: 16 }}
@@ -306,39 +315,26 @@ const SignList = () => {
             )}
 
             <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label="签收单号">{currentRecord.signNo}</Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={statusMap[currentRecord.signStatus]?.color || 'default'}>
                   {statusMap[currentRecord.signStatus]?.text || currentRecord.signStatus}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="订单号">{currentRecord.orderNo}</Descriptions.Item>
-              <Descriptions.Item label="客户">{currentRecord.customerName || '-'}</Descriptions.Item>
-              <Descriptions.Item label="货物">{currentRecord.goods}</Descriptions.Item>
-              <Descriptions.Item label="签收人">{currentRecord.signerName}</Descriptions.Item>
-              <Descriptions.Item label="签收时间">{currentRecord.signTime}</Descriptions.Item>
-              <Descriptions.Item label="联系人">{currentRecord.receiverName}</Descriptions.Item>
-              <Descriptions.Item label="联系电话">{currentRecord.receiverPhone}</Descriptions.Item>
-              <Descriptions.Item label="签收地址" span={2}>{currentRecord.signAddress}</Descriptions.Item>
-              <Descriptions.Item label="签收时温度">{currentRecord.temperature !== undefined ? `${currentRecord.temperature}℃` : '-'}</Descriptions.Item>
-              <Descriptions.Item label="签收时湿度">{currentRecord.humidity !== undefined ? `${currentRecord.humidity}%` : '-'}</Descriptions.Item>
-              <Descriptions.Item label="重量差异">
-                <span style={{ color: currentRecord.weightDiff !== undefined && currentRecord.weightDiff !== 0 ? '#ff4d4f' : undefined }}>
-                  {currentRecord.weightDiff !== undefined ? `${currentRecord.weightDiff} kg` : '-'}
+              <Descriptions.Item label="订单号">{currentRecord.order?.orderNo || '-'}</Descriptions.Item>
+              <Descriptions.Item label="客户">{currentRecord.order?.customer?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="货物">{currentRecord.order?.goodsName || '-'}</Descriptions.Item>
+              <Descriptions.Item label="应收数量">{currentRecord.expectedQuantity}</Descriptions.Item>
+              <Descriptions.Item label="实收数量">{currentRecord.actualQuantity}</Descriptions.Item>
+              <Descriptions.Item label="差异">
+                <span style={{ color: currentRecord.isOverThreshold ? '#ff4d4f' : undefined, fontWeight: currentRecord.isOverThreshold ? 'bold' : 'normal' }}>
+                  {currentRecord.difference?.toFixed(1)}%
+                  {currentRecord.isOverThreshold && <Tag color="red" style={{ marginLeft: 8 }}>异常</Tag>}
                 </span>
               </Descriptions.Item>
-              <Descriptions.Item label="数量差异">
-                <span style={{ color: currentRecord.quantityDiff !== undefined && currentRecord.quantityDiff !== 0 ? '#ff4d4f' : undefined }}>
-                  {currentRecord.quantityDiff !== undefined ? `${currentRecord.quantityDiff} 件` : '-'}
-                </span>
-              </Descriptions.Item>
-              <Descriptions.Item label="是否有损坏">
-                {currentRecord.hasDamage ? <span style={{ color: '#ff4d4f' }}>是</span> : '否'}
-              </Descriptions.Item>
+              <Descriptions.Item label="签收人">{currentRecord.signedBy || '-'}</Descriptions.Item>
+              <Descriptions.Item label="签收时间">{currentRecord.signTime || '-'}</Descriptions.Item>
+              <Descriptions.Item label="关联车辆">{currentRecord.vehicle?.plateNumber || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{currentRecord.createdAt}</Descriptions.Item>
-              {currentRecord.damageDescription && (
-                <Descriptions.Item label="损坏描述" span={2}>{currentRecord.damageDescription}</Descriptions.Item>
-              )}
               {currentRecord.remark && (
                 <Descriptions.Item label="备注" span={2}>{currentRecord.remark}</Descriptions.Item>
               )}

@@ -2,27 +2,33 @@ export type WorkOrderType = 'TEMPERATURE_ALERT' | 'REVIEW' | 'AUDIT'
 export type WorkOrderPriority = 'INFO' | 'WARNING' | 'CRITICAL' | 'EMERGENCY'
 export type WorkOrderStatus = 'PENDING' | 'ASSIGNED' | 'PROCESSING' | 'RESOLVED' | 'ESCALATED' | 'CLOSED'
 
+export interface WorkOrderAssignee {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
+export interface WorkOrderRelatedOrder {
+  id: number
+  orderNo: string
+}
+
 export interface WorkOrder {
   id: number
-  workOrderNo: string
   type: WorkOrderType
   priority: WorkOrderPriority
   status: WorkOrderStatus
   title: string
   description: string
-  relatedOrderId?: number
-  relatedOrderNo?: string
-  vehicleId?: number
-  vehiclePlate?: string
   assigneeId?: number
-  assigneeName?: string
-  creatorId?: number
-  creatorName: string
-  createdAt: string
+  assignee?: WorkOrderAssignee
+  orderId?: number
+  order?: WorkOrderRelatedOrder
+  assignedAt?: string
   deadline?: string
-  resolvedAt?: string
-  closedAt?: string
-  escalationLevel: number
+  createdAt: string
+  escalated: boolean
   remark?: string
 }
 

@@ -108,7 +108,7 @@ export class SignService {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        customer: true,
+        customer: { include: { user: true } },
         driver: true,
       },
     });
@@ -123,6 +123,17 @@ export class SignService {
         type: NotificationType.SIGN_EXCEPTION,
         title,
         content,
+        relatedId: orderId,
+        orderId: orderId,
+      });
+    }
+
+    if (order?.customer?.userId) {
+      await notificationService.create({
+        userId: order.customer.userId,
+        type: NotificationType.SIGN_EXCEPTION,
+        title: `签收异常提醒 - 订单${order?.orderNo}`,
+        content: `您有一笔订单签收数量异常，预定数量: ${expectedQuantity}, 实收数量: ${actualQuantity}, 差异比例: ${diffPercent.toFixed(2)}%`,
         relatedId: orderId,
         orderId: orderId,
       });

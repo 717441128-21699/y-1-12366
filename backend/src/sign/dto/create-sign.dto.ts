@@ -1,7 +1,7 @@
 export class CreateSignDto {
   orderId: number;
   actualQuantity: number;
-  signedBy?: number;
+  signedBy?: string;
   signPhoto?: string;
   remark?: string;
 }

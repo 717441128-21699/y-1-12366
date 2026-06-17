@@ -3,8 +3,17 @@ import { Table, Space, Button, Select, Tag, Modal, Form, Input, message, Card, D
 import { EyeOutlined, CheckCircleOutlined, ArrowUpOutlined, EditOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import type { WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, WorkOrderSearchParams, WorkOrderLog } from '@/types'
-import { getWorkOrderList, getWorkOrderById, getWorkOrderLogs, processWorkOrder, escalateWorkOrder, createWorkOrder, assignWorkOrder, updateWorkOrder } from '@/api/workOrder'
+import { getWorkOrderList, getWorkOrderById, getWorkOrderLogs, processWorkOrder, escalateWorkOrder, createWorkOrder, assignWorkOrder, updateWorkOrder, getUsers } from '@/api/workOrder'
 import dayjs from 'dayjs'
+
+const fallbackUsers = [
+  { id: 1, name: '系统管理员' },
+  { id: 2, name: '冷链主管' },
+  { id: 3, name: '调度员小王' },
+  { id: 4, name: '司机张师傅' },
+  { id: 5, name: '司机李师傅' },
+  { id: 6, name: '司机王师傅' },
+]
 
 const WorkOrderList = () => {
   const [data, setData] = useState<WorkOrder[]>([])
@@ -25,14 +34,7 @@ const WorkOrderList = () => {
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
   const [searchParams, setSearchParams] = useState<WorkOrderSearchParams>({})
-
-  const mockUsers = [
-    { id: 1, name: '张三' },
-    { id: 2, name: '李四' },
-    { id: 3, name: '王五' },
-    { id: 4, name: '赵六' },
-    { id: 5, name: '钱七' },
-  ]
+  const [userList, setUserList] = useState<{ id: number; name: string }[]>(fallbackUsers)
 
   const typeMap: Record<WorkOrderType, string> = {
     TEMPERATURE_ALERT: '温度告警',
@@ -55,6 +57,23 @@ const WorkOrderList = () => {
     ESCALATED: { text: '已升级', color: 'warning' },
     CLOSED: { text: '已关闭', color: 'default' },
   }
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await getUsers()
+        if (res.code === 0 || res.code === 200) {
+          const list = (res.data as any)?.data || res.data
+          if (Array.isArray(list) && list.length > 0) {
+            setUserList(list.map((u: any) => ({ id: u.id, name: u.name })))
+          }
+        }
+      } catch {
+        setUserList(fallbackUsers)
+      }
+    }
+    fetchUsers()
+  }, [])
 
   const fetchData = useCallback(async (params?: WorkOrderSearchParams) => {
     setLoading(true)
@@ -88,10 +107,10 @@ const WorkOrderList = () => {
 
   const columns: ColumnsType<WorkOrder> = [
     {
-      title: '工单号',
-      dataIndex: 'workOrderNo',
-      key: 'workOrderNo',
-      width: 160,
+      title: '工单ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
     },
     {
       title: '类型',
@@ -132,13 +151,7 @@ const WorkOrderList = () => {
       title: '处理人',
       key: 'assignee',
       width: 100,
-      render: (_, record) => record.assigneeName || '-',
-    },
-    {
-      title: '创建人',
-      dataIndex: 'creatorName',
-      key: 'creatorName',
-      width: 100,
+      render: (_, record) => record.assignee?.name || '-',
     },
     {
       title: '创建时间',
@@ -244,7 +257,6 @@ const WorkOrderList = () => {
       title: record.title,
       description: record.description,
       priority: record.priority,
-      relatedOrderNo: record.relatedOrderNo,
     })
     setEditModalVisible(true)
   }
@@ -266,7 +278,6 @@ const WorkOrderList = () => {
         title: values.title,
         description: values.description,
         priority: values.priority,
-        relatedOrderNo: values.relatedOrderNo,
       }
       const res = await createWorkOrder(submitData)
       if (res.code === 0 || res.code === 200) {
@@ -290,7 +301,6 @@ const WorkOrderList = () => {
         title: values.title,
         description: values.description,
         priority: values.priority,
-        relatedOrderNo: values.relatedOrderNo,
       }
       const res = await updateWorkOrder(currentOrder.id, submitData)
       if (res.code === 0 || res.code === 200) {
@@ -448,7 +458,7 @@ const WorkOrderList = () => {
         {currentOrder && (
           <div>
             <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label="工单号">{currentOrder.workOrderNo}</Descriptions.Item>
+              <Descriptions.Item label="工单ID">{currentOrder.id}</Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={statusMap[currentOrder.status]?.color || 'default'}>
                   {statusMap[currentOrder.status]?.text || currentOrder.status}
@@ -461,19 +471,16 @@ const WorkOrderList = () => {
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="标题" span={2}>{currentOrder.title}</Descriptions.Item>
-              <Descriptions.Item label="关联订单">{currentOrder.relatedOrderNo || '-'}</Descriptions.Item>
-              <Descriptions.Item label="关联车辆">{currentOrder.vehiclePlate || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建人">{currentOrder.creatorName}</Descriptions.Item>
-              <Descriptions.Item label="处理人">{currentOrder.assigneeName || '-'}</Descriptions.Item>
+              <Descriptions.Item label="关联订单">{currentOrder.order?.orderNo || currentOrder.orderId || '-'}</Descriptions.Item>
+              <Descriptions.Item label="处理人">{currentOrder.assignee?.name || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{currentOrder.createdAt}</Descriptions.Item>
               <Descriptions.Item label="截止时间">{currentOrder.deadline || '-'}</Descriptions.Item>
-              {currentOrder.resolvedAt && (
-                <Descriptions.Item label="解决时间">{currentOrder.resolvedAt}</Descriptions.Item>
+              {currentOrder.assignedAt && (
+                <Descriptions.Item label="分配时间" span={2}>{currentOrder.assignedAt}</Descriptions.Item>
               )}
-              {currentOrder.closedAt && (
-                <Descriptions.Item label="关闭时间">{currentOrder.closedAt}</Descriptions.Item>
-              )}
-              <Descriptions.Item label="升级等级">{currentOrder.escalationLevel}</Descriptions.Item>
+              <Descriptions.Item label="是否升级">
+                {currentOrder.escalated ? <Tag color="red">是</Tag> : '否'}
+              </Descriptions.Item>
               <Descriptions.Item label="描述" span={2}>{currentOrder.description}</Descriptions.Item>
               {currentOrder.remark && (
                 <Descriptions.Item label="备注" span={2}>{currentOrder.remark}</Descriptions.Item>
@@ -512,7 +519,7 @@ const WorkOrderList = () => {
       >
         {currentOrder && (
           <p style={{ marginBottom: 16 }}>
-            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
+            工单：<strong>{currentOrder.title}</strong>（ID: {currentOrder.id}）
           </p>
         )}
         <Form form={processForm} layout="vertical">
@@ -533,7 +540,7 @@ const WorkOrderList = () => {
       >
         {currentOrder && (
           <p style={{ marginBottom: 16 }}>
-            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
+            工单：<strong>{currentOrder.title}</strong>（ID: {currentOrder.id}）
           </p>
         )}
         <Form form={escalateForm} layout="vertical">
@@ -575,9 +582,6 @@ const WorkOrderList = () => {
               <Select.Option value="EMERGENCY">紧急</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item name="relatedOrderNo" label="关联订单号">
-            <Input placeholder="请输入关联订单号（可选）" />
-          </Form.Item>
         </Form>
       </Modal>
 
@@ -613,9 +617,6 @@ const WorkOrderList = () => {
               <Select.Option value="EMERGENCY">紧急</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item name="relatedOrderNo" label="关联订单号">
-            <Input placeholder="请输入关联订单号（可选）" />
-          </Form.Item>
         </Form>
       </Modal>
 
@@ -630,13 +631,13 @@ const WorkOrderList = () => {
       >
         {currentOrder && (
           <p style={{ marginBottom: 16 }}>
-            工单：<strong>{currentOrder.title}</strong>（{currentOrder.workOrderNo}）
+            工单：<strong>{currentOrder.title}</strong>（ID: {currentOrder.id}）
           </p>
         )}
         <Form form={assignForm} layout="vertical">
           <Form.Item name="assigneeId" label="处理人" rules={[{ required: true, message: '请选择处理人' }]}>
             <Select placeholder="请选择处理人">
-              {mockUsers.map(user => (
+              {userList.map(user => (
                 <Select.Option key={user.id} value={user.id}>
                   {user.name}
                 </Select.Option>
